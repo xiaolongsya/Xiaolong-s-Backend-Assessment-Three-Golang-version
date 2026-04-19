@@ -3,7 +3,7 @@ package model
 import (
 	"log"
 
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -15,4 +15,6 @@ func InitDB() {
 	if err != nil {
 		log.Fatalf("failed to connect database: %v", err)
 	}
+
+	DB.AutoMigrate(&Completion{})
 }

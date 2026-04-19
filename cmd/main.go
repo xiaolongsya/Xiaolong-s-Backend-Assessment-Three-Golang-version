@@ -16,5 +16,7 @@ func main() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 	r.POST("/v1/chat/completions", handler.ChatCompletions)
+	r.GET("/v1/chat/completions/:id", handler.GetCompletion)
+	r.DELETE("/v1/chat/completions/:id", handler.DeleteCompletion)
 	r.Run(":8080")
 }
