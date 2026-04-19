@@ -18,5 +18,6 @@ func main() {
 	r.POST("/v1/chat/completions", handler.ChatCompletions)
 	r.GET("/v1/chat/completions/:id", handler.GetCompletion)
 	r.DELETE("/v1/chat/completions/:id", handler.DeleteCompletion)
+	r.GET("/v1/models", handler.ListModels)
 	r.Run(":8080")
 }
