@@ -1,0 +1,421 @@
+openapi: 3.0.3
+info:
+  title: OpenAI 风格后端 API
+  version: 1.0.0
+  description: |
+    Go + Gin + MySQL 的 OpenAI 风格后端接口。
+
+    - 全接口 Bearer Token 鉴权
+    - Chat Completions（流式 SSE / 非流式）
+    - 生成结果管理（GET / DELETE / CANCEL）
+    - Models 列表（来自 ai_models，且作为 chat 的 model 白名单）
+
+servers:
+  - url: https://backend3.xiaolongya.cn
+    description: 线上（推荐：通过 Nginx/OpenResty 反代 /v1 到 8091）
+
+tags:
+  - name: 健康检查
+  - name: 对话生成
+  - name: 模型列表
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Apifox 示例：`Authorization: Bearer xiaolong`
+
+  parameters:
+    AuthorizationHeader:
+      name: Authorization
+      in: header
+      required: true
+      description: Bearer Token（示例：Bearer xiaolong）
+      schema:
+        type: string
+        example: Bearer xiaolong
+
+    ContentTypeJsonHeader:
+      name: Content-Type
+      in: header
+      required: true
+      description: JSON 请求体
+      schema:
+        type: string
+        example: application/json
+
+  schemas:
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+          required: [message, type]
+      required: [error]
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+      required: [status]
+
+    Message:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant]
+        content:
+          type: string
+      required: [role, content]
+
+    ChatCompletionRequest:
+      type: object
+      properties:
+        model:
+          type: string
+          description: 必须在 ai_models 表中存在且 enabled=1
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        stream:
+          type: boolean
+          default: false
+        temperature:
+          type: number
+          format: double
+          default: 0.7
+      required: [model, messages]
+
+    ChatCompletionChoice:
+      type: object
+      properties:
+        index:
+          type: integer
+        message:
+          $ref: '#/components/schemas/Message'
+        finish_reason:
+          type: string
+          nullable: true
+      required: [index]
+
+    ChatCompletionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: chatcmpl-xxxx
+        object:
+          type: string
+          example: chat.completion
+        created:
+          type: integer
+          format: int64
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionChoice'
+      required: [id, object, created, model, choices]
+
+    DeleteCompletionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: chat.completion.deleted
+        deleted:
+          type: boolean
+          example: true
+      required: [id, object, deleted]
+
+    CancelCompletionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: chat.completion.cancelled
+        cancelled:
+          type: boolean
+          example: true
+      required: [id, object, cancelled]
+
+    Model:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: model
+        created:
+          type: integer
+          format: int64
+        owned_by:
+          type: string
+      required: [id, object]
+
+    ModelListResponse:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Model'
+      required: [object, data]
+
+security:
+  - bearerAuth: []
+
+paths:
+  /healthz:
+    get:
+      tags: [健康检查]
+      summary: 健康检查
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /v1/models:
+    get:
+      tags: [模型列表]
+      summary: 获取模型列表（来自 ai_models，且 enabled=1）
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelListResponse'
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      tags: [模型列表]
+      summary: 获取模型列表（POST 兼容接口）
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelListResponse'
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /v1/chat/completions:
+    post:
+      tags: [对话生成]
+      summary: 发起对话生成（流式/非流式）
+      description: |
+        - 当 stream=false（默认）：返回 application/json
+        - 当 stream=true：返回 text/event-stream（SSE），逐行输出 `data: <json>`，以 `data: [DONE]` 结束
+        - model 必须在 ai_models 表中存在且 enabled=1，否则 400
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+        - $ref: '#/components/parameters/ContentTypeJsonHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
+            examples:
+              non_stream:
+                summary: Non-stream
+                value:
+                  model: MiniMax-M2.7
+                  messages:
+                    - role: user
+                      content: Hello
+                  temperature: 0.7
+                  stream: false
+              stream:
+                summary: Stream
+                value:
+                  model: MiniMax-M2.7
+                  messages:
+                    - role: user
+                      content: Stream test
+                  temperature: 0.7
+                  stream: true
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                sse_example:
+                  summary: SSE example
+                  value: |
+                    data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":1710000000,"model":"MiniMax-M2.7","choices":[{"index":0,"delta":{"role":"assistant"}}]}
+
+                    data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":1710000001,"model":"MiniMax-M2.7","choices":[{"index":0,"delta":{"content":"hello "}}]}
+
+                    data: [DONE]
+        '400':
+          description: 请求参数错误（例如 model 不在白名单）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              examples:
+                model_not_available:
+                  value:
+                    error:
+                      message: Model not available
+                      type: invalid_request_error
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '502':
+          description: 网关错误（上游转发失败）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /v1/chat/completions/{id}:
+    get:
+      tags: [对话生成]
+      summary: 获取生成结果（按 id）
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: chatcmpl-xxxx
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: 未找到
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    delete:
+      tags: [对话生成]
+      summary: 删除生成结果（按 id）
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: chatcmpl-xxxx
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteCompletionResponse'
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: 未找到
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /v1/chat/completions/{id}/cancel:
+    post:
+      tags: [对话生成]
+      summary: 取消正在进行的流式生成
+      description: 仅对 stream=true 的任务有效；找不到任务返回 404。
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: chatcmpl-xxxx
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelCompletionResponse'
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: 未找到
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'

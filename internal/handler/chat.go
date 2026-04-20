@@ -55,6 +55,7 @@ type CancelCompletionResponse struct {
 	Cancelled bool   `json:"cancelled"`
 }
 
+// ChatCompletions 兼容 OpenAI Chat Completions：支持 stream=true/false，并将每次请求落库以便后续 GET/DELETE/CANCEL。
 func ChatCompletions(c *gin.Context) {
 	var req ChatCompletionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

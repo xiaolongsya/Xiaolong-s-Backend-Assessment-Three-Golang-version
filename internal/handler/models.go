@@ -20,6 +20,7 @@ type ModelListResponse struct {
 	Data   []ModelObject `json:"data"`
 }
 
+// ListModels 返回当前可用模型列表（来源 ai_models，且仅包含 enabled=1），用于 SDK 侧 models.list 与 chat 的白名单来源。
 func ListModels(c *gin.Context) {
 	var rows []model.AIModel
 	if err := model.DB.

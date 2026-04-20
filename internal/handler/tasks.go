@@ -15,6 +15,7 @@ var (
 	tasks  = make(map[string]*Task)
 )
 
+// RegisterTask 注册一个可取消的流式任务，返回其 Done 通道（任务完成时会被关闭）。
 func RegisterTask(id string, cancel context.CancelFunc) chan struct{} {
 	task := &Task{
 		Cancel: cancel,
@@ -28,6 +29,7 @@ func RegisterTask(id string, cancel context.CancelFunc) chan struct{} {
 	return task.Done
 }
 
+// FinishTask 标记任务完成并清理，关闭 Done 通道。
 func FinishTask(id string) {
 	taskMu.Lock()
 	task, ok := tasks[id]
@@ -40,6 +42,7 @@ func FinishTask(id string) {
 	}
 }
 
+// CancelTask 取消指定任务；若不存在返回 false。
 func CancelTask(id string) bool {
 	taskMu.Lock()
 	task, ok := tasks[id]

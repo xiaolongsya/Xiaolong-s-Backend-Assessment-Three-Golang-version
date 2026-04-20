@@ -11,6 +11,7 @@ import (
 
 var DB *gorm.DB
 
+// InitDB 初始化 MySQL 连接并执行数据库迁移（Completion/AIModel）。
 func InitDB() {
 	dsn := strings.TrimSpace(os.Getenv("MYSQL_DSN"))
 	if dsn == "" {

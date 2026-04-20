@@ -7,6 +7,20 @@
 - Models 列表
 - MySQL 持久化（GORM AutoMigrate）
 
+## 架构简述
+
+- `cmd/main.go`：路由注册与服务启动
+- `internal/middleware/auth.go`：Bearer Token 鉴权中间件（统一拦截所有接口）
+- `internal/handler/`：业务 Handler（chat/models/任务管理）
+- `internal/model/`：GORM 模型与数据库初始化（MySQL）
+
+## 鉴权与生成流程说明
+
+- 请求进入后先经过鉴权中间件：校验 `Authorization: Bearer <token>`，失败返回 `401`
+- `POST /v1/chat/completions`：解析请求体 → 校验 `model` 是否在 `ai_models(enabled=1)` 白名单 → 生成 `completion_id` → 记录请求/响应到 MySQL
+- `stream=true`：使用 SSE（`text/event-stream`）逐块输出，支持 `POST /v1/chat/completions/{id}/cancel` 取消
+- `GET/DELETE`：按 `completion_id` 查询/删除已持久化的结果
+
 ## 快速开始（本地）
 
 ### 1) 配置环境变量
@@ -64,6 +78,12 @@ python tests/sdk_test.py
 ```
 
 预期输出包含：`models.list ok`、`chat non-stream ok`、`chat stream ok`、`ALL OK`。
+
+## AIGC 使用说明
+
+- 使用工具：GitHub Copilot（用于辅助生成/改写部分代码与文档草稿）
+- 使用范围：OpenAPI（Swagger/Apifox）导出文件、接口文档措辞、以及部分样板代码整理
+- 说明：所有关键逻辑（鉴权、白名单校验、流式输出、落库与生命周期接口）均由人工审阅并在本地/线上联调验证
 
 ## 文档
 

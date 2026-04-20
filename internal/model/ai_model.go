@@ -2,6 +2,7 @@ package model
 
 import "time"
 
+// AIModel 表结构：可用模型白名单来源（enabled=1 才可用于 chat.completions）。
 type AIModel struct {
 	ID      uint      `gorm:"primaryKey"`
 	ModelID string    `gorm:"column:model_id;size:64;uniqueIndex; not null" json:"model_id"`
