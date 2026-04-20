@@ -7,8 +7,8 @@
   - `GET /v1/chat/completions/:id`
   - `DELETE /v1/chat/completions/:id`
   - `POST /v1/chat/completions/:id/cancel`
-  - `GET /v1/models`
-- 全接口 Bearer Token 鉴权（中间件统一处理）；当前测试 token：`test-token`
+  - `GET /v1/models`（兼容 `POST /v1/models`）
+- 全接口 Bearer Token 鉴权（中间件统一处理）；默认测试 token：`test-token`（也支持通过环境变量 `API_TOKENS` 配置）
 - 生成请求全生命周期落库（GORM + MySQL）：
   - 自动建表 `completions`
   - 记录 request/response（`longtext`），并维护状态 `status`（含索引）
@@ -25,7 +25,7 @@
 2. 启动服务
    - `go run ./cmd`
 3. 健康检查
-   - `curl.exe -H "Authorization: Bearer test-token" http://localhost:8080/healthz`
+  - `curl.exe -H "Authorization: Bearer test-token" http://localhost:8091/healthz`
 
 ## 验证步骤（已验证）
 - 非流式生成：`POST /v1/chat/completions` 返回 `chatcmpl-...` 且写入 MySQL

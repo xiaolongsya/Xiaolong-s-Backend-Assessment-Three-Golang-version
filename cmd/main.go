@@ -21,5 +21,6 @@ func main() {
 	r.DELETE("/v1/chat/completions/:id", handler.DeleteCompletion)
 	r.POST("/v1/chat/completions/:id/cancel", handler.CancelCompletion)
 	r.GET("/v1/models", handler.ListModels)
-	r.Run(":8080")
+	r.POST("/v1/models", handler.ListModels)
+	r.Run(":8091")
 }

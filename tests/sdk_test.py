@@ -1,6 +1,6 @@
 from openai import OpenAI
 
-BASE_URL = "http://localhost:8080/v1"
+BASE_URL = "http://localhost:8091/v1"
 API_KEY = "test-token"  # 你的 Bearer token
 
 client = OpenAI(
