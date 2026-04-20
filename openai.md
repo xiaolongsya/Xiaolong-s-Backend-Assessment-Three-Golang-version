@@ -76,6 +76,29 @@ POST /v1/chat/completions
   - `stream`
   - `temperature`（可忽略实际效果，但需解析）
 
+##### 模型白名单（ai_models）
+
+- `model` 必须存在于数据库表 `ai_models` 且 `enabled=1`，否则接口返回 `400 Bad Request`
+- 目的：避免在代码中硬编码模型列表，通过数据库动态维护可用模型
+
+示例：初始化/新增可用模型（MySQL）
+
+```sql
+INSERT INTO ai_models (model_id, owned_by, enabled, created)
+VALUES ('MiniMax-M2.7', 'minimax', 1, UNIX_TIMESTAMP());
+```
+
+示例：当请求的 `model` 不在白名单时，返回错误体（OpenAI 风格）
+
+```json
+{
+  "error": {
+    "message": "Model not available",
+    "type": "invalid_request_error"
+  }
+}
+```
+
 - 每一次生成请求：
   - 必须生成 **唯一 id**
   - 必须被服务端记录（使用数据库持久化）
@@ -106,6 +129,9 @@ POST /v1/chat/completions
 ### 4. 模型列表
 
 列出当前可用的模型，并提供每个模型的基本信息，例如所有者和可用性。
+
+- 模型来源：数据库表 `ai_models`
+- 仅返回 `enabled=1` 的模型；该列表同时作为 `POST /v1/chat/completions` 的 `model` 白名单来源
 
 \*API 文档参考: [官方文档镜像站](https://ai-doc.it-docs.cn/api-reference_en/models)
 
