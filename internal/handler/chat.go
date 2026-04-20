@@ -62,6 +62,19 @@ func ChatCompletions(c *gin.Context) {
 		return
 	}
 
+	var m model.AIModel
+	if err := model.DB.
+		Where("model_id = ? AND enabled = ?", req.Model, true).
+		First(&m).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"message": "Model not available",
+				"type":    "invalid_request_error",
+			},
+		})
+		return
+	}
+
 	completionID := "chatcmpl-" + uuid.NewString()
 	reqBytes, _ := json.Marshal(req)
 
