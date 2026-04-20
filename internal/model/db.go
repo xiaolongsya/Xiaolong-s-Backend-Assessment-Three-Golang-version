@@ -21,7 +21,7 @@ func InitDB() {
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	if err := DB.AutoMigrate(&Completion{}); err != nil {
+	if err := DB.AutoMigrate(&Completion{}, &AIModel{}); err != nil {
 		log.Fatalf("Failed to migrate database: %v", err)
 	}
 }
