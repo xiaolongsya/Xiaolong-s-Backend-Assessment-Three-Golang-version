@@ -14,6 +14,11 @@
   - 记录 request/response（`longtext`），并维护状态 `status`（含索引）
   - cancel 会写回 `status=cancelled` 且 `cancelled_at` 非空
 
+## 扩展能力（实现）
+
+- 上游中转（OpenAI 兼容）：可通过 `UPSTREAM_BASE_URL` + `UPSTREAM_API_KEY` 将 `/v1/chat/completions` 转发到真实模型服务（如 MiniMax）
+- 模型白名单（ai_models）：`/v1/models` 返回 `enabled=1` 的模型；chat 请求的 `model` 必须在白名单内，否则返回 `400 Model not available`
+
 ## 数据库切换（SQLite → MySQL）
 - 当前仅支持 MySQL（不再保留 SQLite 依赖）
 - 通过环境变量 `MYSQL_DSN` 配置数据库连接；启动时强校验，缺失即退出

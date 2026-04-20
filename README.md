@@ -17,6 +17,11 @@
 鉴权（推荐配置）：
 - `API_TOKENS`：允许访问的 Bearer Token 列表（逗号分隔）。未配置时默认允许 `test-token`，以便本地/考核脚本直接运行。
 
+上游转发（可选）：
+- `UPSTREAM_BASE_URL`：上游 OpenAI 兼容 Base URL（示例：`https://api.minimaxi.com/v1`）
+- `UPSTREAM_API_KEY`：上游 API Key（将作为 `Authorization: Bearer <key>` 转发）
+  - 未配置时：服务端使用 mock 逻辑返回（仍支持流式/非流式，便于本地与考核脚本验证）
+
 示例（PowerShell）：
 
 ```powershell
@@ -25,6 +30,18 @@ $env:MYSQL_DSN='user:pass@tcp(host:3306)/kaohe3-go?charset=utf8mb4&parseTime=Tru
 
 可选：
 - `TZ=Asia/Shanghai`：推荐用于容器部署，避免时间少 8 小时（UTC）的问题
+
+### 1.5) 模型白名单（ai_models）
+
+- `/v1/models` 返回数据库表 `ai_models` 中 `enabled=1` 的模型
+- `POST /v1/chat/completions` 的 `model` 必须存在于 `ai_models` 且 `enabled=1`，否则返回 `400 Bad Request`（`Model not available`）
+
+示例（MySQL）：
+
+```sql
+INSERT INTO ai_models (model_id, owned_by, enabled, created)
+VALUES ('MiniMax-M2.7', 'minimax', 1, UNIX_TIMESTAMP());
+```
 
 ### 2) 启动服务
 

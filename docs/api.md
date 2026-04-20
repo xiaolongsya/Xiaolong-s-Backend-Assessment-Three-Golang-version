@@ -8,6 +8,12 @@
   - 可通过环境变量 `API_TOKENS` 配置允许的 token（逗号分隔）
 - Content-Type：请求体为 JSON 的接口使用 `Content-Type: application/json`
 
+可选（上游转发）：
+
+- 当配置环境变量 `UPSTREAM_BASE_URL` 与 `UPSTREAM_API_KEY` 时：
+  - `POST /v1/chat/completions` 会转发到上游 OpenAI 兼容接口（例如 MiniMax：`https://api.minimaxi.com/v1`）
+  - 服务端会将上游返回的 `id` 统一改写为本服务生成的 `completion_id`，以确保 GET/DELETE/CANCEL 等生命周期接口一致
+
 ## 通用错误返回
 
 鉴权失败（401）：
@@ -72,6 +78,20 @@ curl -H "Authorization: Bearer test-token" http://localhost:8091/healthz
 - `messages`（array）
 - `temperature`（number）
 - `stream`（boolean）
+
+模型白名单：
+
+- `model` 必须存在于数据库表 `ai_models` 且 `enabled=1`
+- 否则返回 `400 Bad Request`
+
+```json
+{
+  "error": {
+    "message": "Model not available",
+    "type": "invalid_request_error"
+  }
+}
+```
 
 #### 2.1 非流式（`stream=false`）
 
@@ -201,6 +221,8 @@ curl -H "Authorization: Bearer test-token" \
 ## 4) Models
 
 ### `GET /v1/models`（兼容 `POST /v1/models`）
+
+说明：模型列表来自数据库表 `ai_models`，仅返回 `enabled=1` 的模型。
 
 请求：
 
