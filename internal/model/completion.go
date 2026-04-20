@@ -1,6 +1,8 @@
 package model
 
 import (
+	"time"
+
 	"gorm.io/gorm"
 )
 
@@ -10,4 +12,6 @@ type Completion struct {
 	CompletionID string `gorm:"uniqueIndex"` // 唯一ID
 	Request      string // 原始请求内容（JSON字符串）
 	Response     string // 生成的响应内容（JSON字符串）
+	Status       string `gorm:"index"` // running | completed | cancelled
+	CancelledAt  *time.Time
 }
