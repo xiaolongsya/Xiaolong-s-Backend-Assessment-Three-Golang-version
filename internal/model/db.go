@@ -2,19 +2,26 @@ package model
 
 import (
 	"log"
+	"os"
+	"strings"
 
-	"github.com/glebarez/sqlite"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
 var DB *gorm.DB
 
 func InitDB() {
-	var err error
-	DB, err = gorm.Open(sqlite.Open("openai.db"), &gorm.Config{})
-	if err != nil {
-		log.Fatalf("failed to connect database: %v", err)
+	dsn := strings.TrimSpace(os.Getenv("MYSQL_DSN"))
+	if dsn == "" {
+		log.Fatal("MYSQL_DSN environment variable is required")
 	}
-
-	DB.AutoMigrate(&Completion{})
+	var err error
+	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	if err := DB.AutoMigrate(&Completion{}); err != nil {
+		log.Fatalf("Failed to migrate database: %v", err)
+	}
 }
