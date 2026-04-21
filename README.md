@@ -36,6 +36,35 @@
 - `UPSTREAM_API_KEY`：上游 API Key（将作为 `Authorization: Bearer <key>` 转发）
   - 未配置时：服务端使用 mock 逻辑返回（仍支持流式/非流式，便于本地与考核脚本验证）
 
+上游转发（进阶：多 key / 多提供商，推荐）：
+
+- 以数据库 `ai_models.owned_by` 作为“提供商标识”（例如 `minimax` / `openai` / `aliyun`）
+- 后端会按 `owned_by` 自动选择上游配置，支持同一提供商配置多个 key（逗号分隔）
+
+环境变量优先级（高 → 低）：
+
+- `UPSTREAM_<PROVIDER>_BASE_URL` → `UPSTREAM_BASE_URL`
+- `UPSTREAM_<PROVIDER>_API_KEYS`（多 key）→ `UPSTREAM_<PROVIDER>_API_KEY`（单 key）→ `UPSTREAM_API_KEY`
+
+示例（PowerShell）：
+
+```powershell
+$env:UPSTREAM_MINIMAX_BASE_URL='https://api.minimaxi.com/v1'
+$env:UPSTREAM_MINIMAX_API_KEYS='key-1,key-2,key-3'
+
+$env:UPSTREAM_OPENAI_BASE_URL='https://api.openai.com/v1'
+$env:UPSTREAM_OPENAI_API_KEY='sk-xxxx'
+```
+
+对应插入模型示例：
+
+```sql
+INSERT INTO ai_models (model_id, owned_by, enabled, created)
+VALUES ('MiniMax-M2.7', 'minimax', 1, UNIX_TIMESTAMP());
+
+INSERT INTO ai_models (model_id, owned_by, enabled, created)
+VALUES ('gpt-4o-mini', 'openai', 1, UNIX_TIMESTAMP());
+```
 示例（PowerShell）：
 
 ```powershell

@@ -22,5 +22,7 @@ func main() {
 	r.POST("/v1/chat/completions/:id/cancel", handler.CancelCompletion)
 	r.GET("/v1/models", handler.ListModels)
 	r.POST("/v1/models", handler.ListModels)
+	r.GET("/v1/admin/models", handler.ListAllModels)
+	r.PATCH("/v1/admin/models/:model_id", handler.UpdateModelEnabled)
 	r.Run(":8091")
 }

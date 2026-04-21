@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"net/http"
 	"openai-backend/internal/model"
@@ -55,6 +56,109 @@ type CancelCompletionResponse struct {
 	Cancelled bool   `json:"cancelled"`
 }
 
+type upstreamConfig struct {
+	baseURL string
+	apiKey  string
+}
+
+func envKeySuffixFromOwnedBy(ownedBy string) string {
+	s := strings.TrimSpace(ownedBy)
+	if s == "" {
+		return ""
+	}
+	s = strings.ToUpper(s)
+	var b strings.Builder
+	b.Grow(len(s))
+	lastUnderscore := false
+	for _, r := range s {
+		isAZ := r >= 'A' && r <= 'Z'
+		is09 := r >= '0' && r <= '9'
+		if isAZ || is09 {
+			b.WriteRune(r)
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			b.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+	out := strings.Trim(b.String(), "_")
+	return out
+}
+
+func parseCommaList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		v := strings.TrimSpace(p)
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func pickKeyDeterministic(keys []string, seed string) string {
+	if len(keys) == 0 {
+		return ""
+	}
+	if len(keys) == 1 {
+		return keys[0]
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(seed))
+	idx := int(h.Sum32() % uint32(len(keys)))
+	return keys[idx]
+}
+
+// resolveUpstreamForModel 按模型所属 provider（ai_models.owned_by）解析上游配置。
+//
+// 优先级（高 → 低）：
+// - UPSTREAM_<PROVIDER>_BASE_URL
+// - UPSTREAM_BASE_URL
+//
+// - UPSTREAM_<PROVIDER>_API_KEYS（逗号分隔，多 key）
+// - UPSTREAM_<PROVIDER>_API_KEY（单 key）
+// - UPSTREAM_API_KEY（单 key）
+func resolveUpstreamForModel(m model.AIModel, completionID string) upstreamConfig {
+	provider := envKeySuffixFromOwnedBy(m.OwnedBy)
+
+	baseURL := ""
+	if provider != "" {
+		baseURL = strings.TrimSpace(os.Getenv("UPSTREAM_" + provider + "_BASE_URL"))
+	}
+	if baseURL == "" {
+		baseURL = strings.TrimSpace(os.Getenv("UPSTREAM_BASE_URL"))
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+
+	// keys
+	var keys []string
+	if provider != "" {
+		keys = parseCommaList(os.Getenv("UPSTREAM_" + provider + "_API_KEYS"))
+		if len(keys) == 0 {
+			k := strings.TrimSpace(os.Getenv("UPSTREAM_" + provider + "_API_KEY"))
+			if k != "" {
+				keys = []string{k}
+			}
+		}
+	}
+	if len(keys) == 0 {
+		k := strings.TrimSpace(os.Getenv("UPSTREAM_API_KEY"))
+		if k != "" {
+			keys = []string{k}
+		}
+	}
+
+	apiKey := pickKeyDeterministic(keys, completionID)
+	return upstreamConfig{baseURL: baseURL, apiKey: apiKey}
+}
+
 // ChatCompletions 兼容 OpenAI Chat Completions：支持 stream=true/false，并将每次请求落库以便后续 GET/DELETE/CANCEL。
 func ChatCompletions(c *gin.Context) {
 	var req ChatCompletionRequest
@@ -86,10 +190,11 @@ func ChatCompletions(c *gin.Context) {
 		Status:       "running",
 	}).Error
 
-	upstreamBase := strings.TrimRight(strings.TrimSpace(os.Getenv("UPSTREAM_BASE_URL")), "/")
-	upstreamKey := strings.TrimSpace(os.Getenv("UPSTREAM_API_KEY"))
+	up := resolveUpstreamForModel(m, completionID)
+	upstreamBase := up.baseURL
+	upstreamKey := up.apiKey
 
-	// 如果配置了上游，并且是非流式，则转发到 MiniMax（OpenAI 兼容）
+	// 如果配置了上游，并且是非流式，则转发到上游（OpenAI 兼容）
 	if upstreamBase != "" && upstreamKey != "" && !req.Stream {
 		upstreamURL := upstreamBase + "/chat/completions"
 
