@@ -116,6 +116,18 @@ func pickKeyDeterministic(keys []string, seed string) string {
 	return keys[idx]
 }
 
+func shouldFallbackForStatus(statusCode int) bool {
+	if statusCode >= 500 {
+		return true
+	}
+	switch statusCode {
+	case http.StatusTooManyRequests, http.StatusUnauthorized, http.StatusForbidden:
+		return true
+	default:
+		return false
+	}
+}
+
 // resolveUpstreamForModel 按模型所属 provider（ai_models.owned_by）解析上游配置。
 //
 // 优先级（高 → 低）：
@@ -127,36 +139,7 @@ func pickKeyDeterministic(keys []string, seed string) string {
 // - UPSTREAM_API_KEY（单 key）
 func resolveUpstreamForModel(m model.AIModel, completionID string) upstreamConfig {
 	provider := envKeySuffixFromOwnedBy(m.OwnedBy)
-
-	baseURL := ""
-	if provider != "" {
-		baseURL = strings.TrimSpace(os.Getenv("UPSTREAM_" + provider + "_BASE_URL"))
-	}
-	if baseURL == "" {
-		baseURL = strings.TrimSpace(os.Getenv("UPSTREAM_BASE_URL"))
-	}
-	baseURL = strings.TrimRight(baseURL, "/")
-
-	// keys
-	var keys []string
-	if provider != "" {
-		keys = parseCommaList(os.Getenv("UPSTREAM_" + provider + "_API_KEYS"))
-		if len(keys) == 0 {
-			k := strings.TrimSpace(os.Getenv("UPSTREAM_" + provider + "_API_KEY"))
-			if k != "" {
-				keys = []string{k}
-			}
-		}
-	}
-	if len(keys) == 0 {
-		k := strings.TrimSpace(os.Getenv("UPSTREAM_API_KEY"))
-		if k != "" {
-			keys = []string{k}
-		}
-	}
-
-	apiKey := pickKeyDeterministic(keys, completionID)
-	return upstreamConfig{baseURL: baseURL, apiKey: apiKey}
+	return resolveUpstreamForProvider(provider, completionID)
 }
 
 // ChatCompletions 兼容 OpenAI Chat Completions：支持 stream=true/false，并将每次请求落库以便后续 GET/DELETE/CANCEL。
@@ -190,206 +173,334 @@ func ChatCompletions(c *gin.Context) {
 		Status:       "running",
 	}).Error
 
-	up := resolveUpstreamForModel(m, completionID)
-	upstreamBase := up.baseURL
-	upstreamKey := up.apiKey
+	primary := envKeySuffixFromOwnedBy(m.OwnedBy)
+	fallbackMap := parseUpstreamFallbacks()
 
-	// 如果配置了上游，并且是非流式，则转发到上游（OpenAI 兼容）
-	if upstreamBase != "" && upstreamKey != "" && !req.Stream {
-		upstreamURL := upstreamBase + "/chat/completions"
+	attempts := make([]string, 0, 3)
+	if primary != "" {
+		attempts = append(attempts, primary)
+		attempts = append(attempts, fallbackMap[primary]...)
+	}
 
+	// 如果配置了上游，并且是非流式，则转发到上游（OpenAI 兼容，支持按 attempts 自动回退）
+	if !req.Stream && len(attempts) > 0 {
 		bodyBytes, err := json.Marshal(req)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"message": "Failed to marshal request", "type": "server_error"}})
 			return
 		}
 
-		httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, upstreamURL, bytes.NewReader(bodyBytes))
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"message": "Failed to create upstream request", "type": "server_error"}})
-			return
-		}
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("Authorization", "Bearer "+upstreamKey)
+		triedAny := false
+		var lastStatus int
+		var lastCT string
+		var lastRespBytes []byte
+		var lastErr error
 
-		resp, err := (&http.Client{}).Do(httpReq)
-		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{"message": "Upstream request failed: " + err.Error(), "type": "upstream_error"}})
-			_ = model.DB.Model(&model.Completion{}).Where("completion_id = ?", completionID).Updates(map[string]any{
-				"status": "failed",
-			}).Error
-			return
-		}
-		defer resp.Body.Close()
-
-		respBytes, _ := io.ReadAll(resp.Body)
-
-		if resp.StatusCode == http.StatusOK {
-			var obj map[string]any
-			if err := json.Unmarshal(respBytes, &obj); err == nil {
-				obj["id"] = completionID
-				if b, err := json.Marshal(obj); err == nil {
-					respBytes = b
-				}
+		for _, provider := range attempts {
+			up := resolveUpstreamForProvider(provider, completionID)
+			if up.baseURL == "" || up.apiKey == "" {
+				continue
 			}
+			triedAny = true
+
+			upstreamURL := up.baseURL + "/chat/completions"
+			httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, upstreamURL, bytes.NewReader(bodyBytes))
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"message": "Failed to create upstream request", "type": "server_error"}})
+				return
+			}
+			httpReq.Header.Set("Content-Type", "application/json")
+			httpReq.Header.Set("Authorization", "Bearer "+up.apiKey)
+
+			resp, err := (&http.Client{}).Do(httpReq)
+			if err != nil {
+				lastErr = err
+				lastStatus = http.StatusBadGateway
+				lastCT = "application/json"
+				lastRespBytes = nil
+				continue
+			}
+
+			respBytes, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+
+			ct := resp.Header.Get("Content-Type")
+			if ct == "" {
+				ct = "application/json"
+			}
+
+			if resp.StatusCode == http.StatusOK {
+				var obj map[string]any
+				if err := json.Unmarshal(respBytes, &obj); err == nil {
+					obj["id"] = completionID
+					if b, err := json.Marshal(obj); err == nil {
+						respBytes = b
+					}
+				}
+
+				_ = model.DB.Model(&model.Completion{}).Where("completion_id = ?", completionID).Updates(map[string]any{
+					"response": string(respBytes),
+					"status":   "completed",
+				}).Error
+
+				c.Data(resp.StatusCode, ct, respBytes)
+				return
+			}
+
+			// 非 200：记录最后一次响应；判断是否回退
+			lastStatus = resp.StatusCode
+			lastCT = ct
+			lastRespBytes = respBytes
+			lastErr = nil
+
+			if shouldFallbackForStatus(resp.StatusCode) {
+				continue
+			}
+
+			// 非回退类错误，直接透传并落库 failed
+			_ = model.DB.Model(&model.Completion{}).Where("completion_id = ?", completionID).Updates(map[string]any{
+				"response": string(respBytes),
+				"status":   "failed",
+			}).Error
+			c.Data(resp.StatusCode, ct, respBytes)
+			return
 		}
 
-		// 持久化上游响应
-		_ = model.DB.Model(&model.Completion{}).Where("completion_id = ?", completionID).Updates(map[string]any{
-			"response": string(respBytes),
-			"status":   "completed",
-		}).Error
+		// 如果至少尝试过一个上游，但都失败了：返回最后一次可用的错误
+		if triedAny {
+			status := lastStatus
+			if status == 0 {
+				status = http.StatusBadGateway
+			}
+			ct := lastCT
+			if ct == "" {
+				ct = "application/json"
+			}
 
-		// 透传上游响应（包含非 200 的错误体）
-		ct := resp.Header.Get("Content-Type")
-		if ct == "" {
-			ct = "application/json"
+			respBytes := lastRespBytes
+			if respBytes == nil {
+				msg := "Upstream request failed"
+				if lastErr != nil {
+					msg = msg + ": " + lastErr.Error()
+				}
+				respBytes, _ = json.Marshal(map[string]any{
+					"error": map[string]any{
+						"message": msg,
+						"type":    "upstream_error",
+					},
+				})
+			}
+
+			_ = model.DB.Model(&model.Completion{}).Where("completion_id = ?", completionID).Updates(map[string]any{
+				"response": string(respBytes),
+				"status":   "failed",
+			}).Error
+			c.Data(status, ct, respBytes)
+			return
 		}
-		c.Data(resp.StatusCode, ct, respBytes)
-		return
 	}
 	// 如果配置了上游，并且是流式，则转发上游 SSE（并把 id 改为本服务的 completionID）
-	if upstreamBase != "" && upstreamKey != "" && req.Stream {
+	if req.Stream && len(attempts) > 0 {
 		ctx, cancel := context.WithCancel(c.Request.Context())
 		RegisterTask(completionID, cancel)
 		defer FinishTask(completionID)
 
-		upstreamURL := upstreamBase + "/chat/completions"
 		bodyBytes, err := json.Marshal(req) // req.Stream = true
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"message": "Failed to marshal request", "type": "server_error"}})
 			return
 		}
 
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(bodyBytes))
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"message": "Failed to create upstream request", "type": "server_error"}})
-			return
-		}
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("Authorization", "Bearer "+upstreamKey)
+		triedAny := false
+		var lastStatus int
+		var lastCT string
+		var lastRespBytes []byte
+		var lastErr error
 
-		resp, err := (&http.Client{}).Do(httpReq) // 不要设置 Timeout，流式会一直跑
-		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{"message": "Upstream request failed: " + err.Error(), "type": "upstream_error"}})
+		for _, provider := range attempts {
+			up := resolveUpstreamForProvider(provider, completionID)
+			if up.baseURL == "" || up.apiKey == "" {
+				continue
+			}
+			triedAny = true
+
+			upstreamURL := up.baseURL + "/chat/completions"
+			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(bodyBytes))
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"message": "Failed to create upstream request", "type": "server_error"}})
+				return
+			}
+			httpReq.Header.Set("Content-Type", "application/json")
+			httpReq.Header.Set("Authorization", "Bearer "+up.apiKey)
+
+			resp, err := (&http.Client{}).Do(httpReq) // 不要设置 Timeout，流式会一直跑
+			if err != nil {
+				lastErr = err
+				lastStatus = http.StatusBadGateway
+				lastCT = "application/json"
+				lastRespBytes = nil
+				continue
+			}
+
+			// 非 200：读完错误体后决定是否回退
+			if resp.StatusCode != http.StatusOK {
+				respBytes, _ := io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+				ct := resp.Header.Get("Content-Type")
+				if ct == "" {
+					ct = "application/json"
+				}
+
+				lastStatus = resp.StatusCode
+				lastCT = ct
+				lastRespBytes = respBytes
+				lastErr = nil
+
+				if shouldFallbackForStatus(resp.StatusCode) {
+					continue
+				}
+
+				c.Data(resp.StatusCode, ct, respBytes)
+				_ = model.DB.Model(&model.Completion{}).Where("completion_id = ?", completionID).Updates(map[string]any{
+					"response": string(respBytes),
+					"status":   "failed",
+				}).Error
+				return
+			}
+
+			// 成功选中该 provider，进入流式转发
+			defer resp.Body.Close()
+
+			c.Header("Content-Type", "text/event-stream")
+			c.Header("Cache-Control", "no-cache")
+			c.Header("Connection", "keep-alive")
+			c.Status(http.StatusOK)
+
+			flusher, ok := c.Writer.(http.Flusher)
+			if !ok {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": gin.H{"message": "Streaming unsupported", "type": "server_error"},
+				})
+				return
+			}
+
+			reader := bufio.NewReader(resp.Body)
+			var generated strings.Builder
+
+			for {
+				line, err := reader.ReadBytes('\n')
+				if len(line) > 0 {
+					// 只处理 data: 行，替换其中 JSON 的 id，并尽量累积 content 方便落库
+					if bytes.HasPrefix(line, []byte("data: ")) {
+						payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data: ")))
+
+						if bytes.Equal(payload, []byte("[DONE]")) {
+							// 原样写回 DONE
+							_, _ = c.Writer.Write(line)
+							flusher.Flush()
+							break
+						}
+
+						// 尝试把 data: 后面的 JSON 解析出来，替换 id
+						var obj map[string]any
+						if json.Unmarshal(payload, &obj) == nil {
+							obj["id"] = completionID
+							if b, e := json.Marshal(obj); e == nil {
+								// 回写成 data: <new-json>\n
+								line = append([]byte("data: "), append(b, '\n')...)
+							}
+
+							// 尝试抽取 delta.content（尽力而为，不影响主流程）
+							if choices, ok := obj["choices"].([]any); ok && len(choices) > 0 {
+								if c0, ok := choices[0].(map[string]any); ok {
+									if delta, ok := c0["delta"].(map[string]any); ok {
+										if content, ok := delta["content"].(string); ok {
+											generated.WriteString(content)
+										}
+									}
+								}
+							}
+						}
+					}
+
+					_, _ = c.Writer.Write(line)
+					flusher.Flush()
+				}
+				if err != nil {
+					// 上游断开（包括 cancel 导致的 ctx cancel）
+					break
+				}
+			}
+
+			// cancel 或完成后，落库一个最终 JSON，保证 GET /:id 能返回 JSON
+			finalResp := ChatCompletionResponse{
+				ID:      completionID,
+				Object:  "chat.completion",
+				Created: time.Now().Unix(),
+				Model:   req.Model,
+				Choices: []Choice{{
+					Index: 0,
+					Message: Message{
+						Role:    "assistant",
+						Content: generated.String(),
+					},
+					FinishReason: "stop",
+				}},
+			}
+
+			// 如果是被取消（ctx.Done），标记 cancelled
+			if ctx.Err() != nil {
+				finalResp.Choices[0].FinishReason = "cancelled"
+				respBytes, _ := json.Marshal(finalResp)
+				now := time.Now()
+				_ = model.DB.Model(&model.Completion{}).Where("completion_id = ?", completionID).Updates(map[string]any{
+					"response":     string(respBytes),
+					"status":       "cancelled",
+					"cancelled_at": &now,
+				}).Error
+				return
+			}
+
+			respBytes, _ := json.Marshal(finalResp)
 			_ = model.DB.Model(&model.Completion{}).Where("completion_id = ?", completionID).Updates(map[string]any{
-				"status": "failed",
+				"response": string(respBytes),
+				"status":   "completed",
 			}).Error
 			return
 		}
-		defer resp.Body.Close()
 
-		// 透传上游状态码（非 200 直接返回错误体）
-		if resp.StatusCode != http.StatusOK {
-			respBytes, _ := io.ReadAll(resp.Body)
-			ct := resp.Header.Get("Content-Type")
+		// 所有上游都在开始流式前失败：仅当确实尝试过上游时返回错误，否则继续走 mock
+		if triedAny {
+			status := lastStatus
+			if status == 0 {
+				status = http.StatusBadGateway
+			}
+			ct := lastCT
 			if ct == "" {
 				ct = "application/json"
 			}
-			c.Data(resp.StatusCode, ct, respBytes)
+
+			respBytes := lastRespBytes
+			if respBytes == nil {
+				msg := "Upstream request failed"
+				if lastErr != nil {
+					msg = msg + ": " + lastErr.Error()
+				}
+				respBytes, _ = json.Marshal(map[string]any{
+					"error": map[string]any{
+						"message": msg,
+						"type":    "upstream_error",
+					},
+				})
+			}
+
+			c.Data(status, ct, respBytes)
 			_ = model.DB.Model(&model.Completion{}).Where("completion_id = ?", completionID).Updates(map[string]any{
 				"response": string(respBytes),
 				"status":   "failed",
 			}).Error
 			return
 		}
-
-		c.Header("Content-Type", "text/event-stream")
-		c.Header("Cache-Control", "no-cache")
-		c.Header("Connection", "keep-alive")
-		c.Status(http.StatusOK)
-
-		flusher, ok := c.Writer.(http.Flusher)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": gin.H{"message": "Streaming unsupported", "type": "server_error"},
-			})
-			return
-		}
-
-		reader := bufio.NewReader(resp.Body)
-		var generated strings.Builder
-
-		for {
-			line, err := reader.ReadBytes('\n')
-			if len(line) > 0 {
-				// 只处理 data: 行，替换其中 JSON 的 id，并尽量累积 content 方便落库
-				if bytes.HasPrefix(line, []byte("data: ")) {
-					payload := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data: ")))
-
-					if bytes.Equal(payload, []byte("[DONE]")) {
-						// 原样写回 DONE
-						_, _ = c.Writer.Write(line)
-						flusher.Flush()
-						break
-					}
-
-					// 尝试把 data: 后面的 JSON 解析出来，替换 id
-					var obj map[string]any
-					if json.Unmarshal(payload, &obj) == nil {
-						obj["id"] = completionID
-						if b, e := json.Marshal(obj); e == nil {
-							// 回写成 data: <new-json>\n
-							line = append([]byte("data: "), append(b, '\n')...)
-						}
-
-						// 尝试抽取 delta.content（尽力而为，不影响主流程）
-						if choices, ok := obj["choices"].([]any); ok && len(choices) > 0 {
-							if c0, ok := choices[0].(map[string]any); ok {
-								if delta, ok := c0["delta"].(map[string]any); ok {
-									if content, ok := delta["content"].(string); ok {
-										generated.WriteString(content)
-									}
-								}
-							}
-						}
-					}
-				}
-
-				_, _ = c.Writer.Write(line)
-				flusher.Flush()
-			}
-			if err != nil {
-				// 上游断开（包括 cancel 导致的 ctx cancel）
-				break
-			}
-		}
-
-		// cancel 或完成后，落库一个最终 JSON，保证 GET /:id 能返回 JSON
-		finalResp := ChatCompletionResponse{
-			ID:      completionID,
-			Object:  "chat.completion",
-			Created: time.Now().Unix(),
-			Model:   req.Model,
-			Choices: []Choice{{
-				Index: 0,
-				Message: Message{
-					Role:    "assistant",
-					Content: generated.String(),
-				},
-				FinishReason: "stop",
-			}},
-		}
-
-		// 如果是被取消（ctx.Done），标记 cancelled
-		if ctx.Err() != nil {
-			finalResp.Choices[0].FinishReason = "cancelled"
-			respBytes, _ := json.Marshal(finalResp)
-			now := time.Now()
-			_ = model.DB.Model(&model.Completion{}).Where("completion_id = ?", completionID).Updates(map[string]any{
-				"response":     string(respBytes),
-				"status":       "cancelled",
-				"cancelled_at": &now,
-			}).Error
-			return
-		}
-
-		respBytes, _ := json.Marshal(finalResp)
-		_ = model.DB.Model(&model.Completion{}).Where("completion_id = ?", completionID).Updates(map[string]any{
-			"response": string(respBytes),
-			"status":   "completed",
-		}).Error
-		return
 	}
 
 	if req.Stream {
@@ -575,4 +686,82 @@ func CancelCompletion(c *gin.Context) {
 		Object:    "chat.completion.cancelled",
 		Cancelled: true,
 	})
+}
+
+func parseUpstreamFallbacks() map[string][]string {
+	raw := strings.TrimSpace(os.Getenv("UPSTREAM_FALLBACKS"))
+	if raw == "" {
+		return map[string][]string{}
+	}
+
+	out := make(map[string][]string)
+	pairs := strings.Split(raw, ";")
+	for _, pair := range pairs {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+
+		kv := strings.SplitN(pair, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+
+		primary := envKeySuffixFromOwnedBy(kv[0]) // 关键：统一成 VOLCANO / MINIMAX 这种 suffix
+		if primary == "" {
+			continue
+		}
+
+		rawList := strings.TrimSpace(kv[1])
+		if rawList == "" {
+			continue
+		}
+
+		items := strings.Split(rawList, ",")
+		var fallbacks []string
+		for _, it := range items {
+			s := envKeySuffixFromOwnedBy(it)
+			if s != "" && s != primary {
+				fallbacks = append(fallbacks, s)
+			}
+		}
+		if len(fallbacks) > 0 {
+			out[primary] = fallbacks
+		}
+	}
+
+	return out
+}
+
+func resolveUpstreamForProvider(providerSuffix string, completionID string) upstreamConfig {
+	provider := strings.TrimSpace(providerSuffix)
+
+	baseURL := ""
+	if provider != "" {
+		baseURL = strings.TrimSpace(os.Getenv("UPSTREAM_" + provider + "_BASE_URL"))
+	}
+	if baseURL == "" {
+		baseURL = strings.TrimSpace(os.Getenv("UPSTREAM_BASE_URL"))
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+
+	var keys []string
+	if provider != "" {
+		keys = parseCommaList(os.Getenv("UPSTREAM_" + provider + "_API_KEYS"))
+		if len(keys) == 0 {
+			k := strings.TrimSpace(os.Getenv("UPSTREAM_" + provider + "_API_KEY"))
+			if k != "" {
+				keys = []string{k}
+			}
+		}
+	}
+	if len(keys) == 0 {
+		k := strings.TrimSpace(os.Getenv("UPSTREAM_API_KEY"))
+		if k != "" {
+			keys = []string{k}
+		}
+	}
+
+	apiKey := pickKeyDeterministic(keys, completionID)
+	return upstreamConfig{baseURL: baseURL, apiKey: apiKey}
 }
