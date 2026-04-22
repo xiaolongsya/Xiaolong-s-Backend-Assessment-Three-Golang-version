@@ -1,4 +1,4 @@
-package handler
+package task
 
 import (
 	"context"
@@ -15,8 +15,8 @@ var (
 	tasks  = make(map[string]*Task)
 )
 
-// RegisterTask 注册一个可取消的流式任务，返回其 Done 通道（任务完成时会被关闭）。
-func RegisterTask(id string, cancel context.CancelFunc) chan struct{} {
+// Register registers a cancellable task by id and returns its Done channel.
+func Register(id string, cancel context.CancelFunc) chan struct{} {
 	task := &Task{
 		Cancel: cancel,
 		Done:   make(chan struct{}),
@@ -29,8 +29,8 @@ func RegisterTask(id string, cancel context.CancelFunc) chan struct{} {
 	return task.Done
 }
 
-// FinishTask 标记任务完成并清理，关闭 Done 通道。
-func FinishTask(id string) {
+// Finish marks the task done and removes it from registry.
+func Finish(id string) {
 	taskMu.Lock()
 	task, ok := tasks[id]
 	if ok {
@@ -42,8 +42,8 @@ func FinishTask(id string) {
 	}
 }
 
-// CancelTask 取消指定任务；若不存在返回 false。
-func CancelTask(id string) bool {
+// Cancel cancels the task. Returns false when task id does not exist.
+func Cancel(id string) bool {
 	taskMu.Lock()
 	task, ok := tasks[id]
 	taskMu.Unlock()

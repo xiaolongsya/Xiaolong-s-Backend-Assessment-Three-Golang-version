@@ -11,7 +11,11 @@
 
 - `cmd/main.go`：路由注册与服务启动
 - `internal/middleware/auth.go`：Bearer Token 鉴权中间件（统一拦截所有接口）
-- `internal/handler/`：业务 Handler（chat/models/任务管理）
+- `internal/handler/`：HTTP 适配层（Gin handler：参数绑定 / 返回 JSON 或 SSE）
+- `internal/service/`：业务编排层（模型白名单校验、上游选择/回退、落库状态机）
+- `internal/repo/`：数据访问层（基于 GORM 的 DB 读写封装）
+- `internal/upstream/`：上游客户端层（OpenAI 兼容 HTTP 调用/流式连接）
+- `internal/task/`：任务注册层（流式任务 cancel/finish 管理）
 - `internal/model/`：GORM 模型与数据库初始化（MySQL）
 
 ## 鉴权与生成流程说明
@@ -45,6 +49,24 @@
 
 - `UPSTREAM_<PROVIDER>_BASE_URL` → `UPSTREAM_BASE_URL`
 - `UPSTREAM_<PROVIDER>_API_KEYS`（多 key）→ `UPSTREAM_<PROVIDER>_API_KEY`（单 key）→ `UPSTREAM_API_KEY`
+
+上游不可用自动回退（可选）：
+
+- `UPSTREAM_FALLBACKS`：当 primary provider 不可用时，按配置顺序回退到其他 provider
+
+格式：
+
+```
+primary=fallback1,fallback2;another=fallbackX
+```
+
+示例（火山引擎与 MiniMax 双向回退）：
+
+```powershell
+$env:UPSTREAM_FALLBACKS='volcano=minimax;minimax=volcano'
+```
+
+触发回退的情况（最小实现）：网络错误、HTTP 5xx、429、401、403。
 
 示例（PowerShell）：
 
