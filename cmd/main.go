@@ -24,5 +24,9 @@ func main() {
 	r.POST("/v1/models", handler.ListModels)
 	r.GET("/v1/admin/models", handler.ListAllModels)
 	r.PATCH("/v1/admin/models/:model_id", handler.UpdateModelEnabled)
+	r.POST("/v1/files", handler.CreateFile)
+	r.GET("/v1/files", handler.ListFiles)
+	r.GET("/v1/files/:file_id", handler.GetFile)
+	r.DELETE("/v1/files/:file_id", handler.DeleteFile)
 	r.Run(":8091")
 }
