@@ -18,6 +18,7 @@ tags:
   - name: 健康检查
   - name: 对话生成
   - name: 模型列表
+  - name: 文件管理
 
 components:
   securitySchemes:
@@ -182,6 +183,57 @@ components:
           items:
             $ref: '#/components/schemas/Model'
       required: [object, data]
+
+    FileObject:
+      type: object
+      properties:
+        id:
+          type: string
+          example: file-xxxx
+        object:
+          type: string
+          example: file
+        bytes:
+          type: integer
+          format: int64
+          example: 123
+        created_at:
+          type: integer
+          format: int64
+          example: 1710000000
+        filename:
+          type: string
+          example: README.md
+        purpose:
+          type: string
+          example: assistants
+      required: [id, object, bytes, created_at, filename, purpose]
+
+    FileListResponse:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileObject'
+      required: [object, data]
+
+    FileDeleteResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: file-xxxx
+        object:
+          type: string
+          example: file
+        deleted:
+          type: boolean
+          example: true
+      required: [id, object, deleted]
 
 security:
   - bearerAuth: []
@@ -415,6 +467,153 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
         '404':
           description: 未找到
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /v1/files:
+    post:
+      tags: [文件管理]
+      summary: 上传文件
+      description: multipart/form-data，字段 file（文件） + purpose（文本）。
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                purpose:
+                  type: string
+                  example: assistants
+                file:
+                  type: string
+                  format: binary
+              required: [file]
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileObject'
+        '400':
+          description: 请求参数错误（例如缺少 file）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          description: 服务端错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+    get:
+      tags: [文件管理]
+      summary: 获取文件列表
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileListResponse'
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          description: 服务端错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /v1/files/{file_id}:
+    get:
+      tags: [文件管理]
+      summary: 获取文件元信息
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: file_id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: file-xxxx
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileObject'
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: 未找到
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          description: 服务端错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+    delete:
+      tags: [文件管理]
+      summary: 删除文件（硬删DB+删除落盘文件）
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: file_id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: file-xxxx
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileDeleteResponse'
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: 未找到
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          description: 服务端错误
           content:
             application/json:
               schema:

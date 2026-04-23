@@ -96,6 +96,12 @@ $env:MYSQL_DSN='user:pass@tcp(host:3306)/kaohe3-go?charset=utf8mb4&parseTime=Tru
 可选：
 - `TZ=Asia/Shanghai`：推荐用于容器部署，避免时间少 8 小时（UTC）的问题
 
+Files（可选加分）：
+
+- `FILE_STORAGE_DIR`：上传文件的落盘目录
+  - 未配置时：默认写入 `./data/files`
+  - Linux 部署示例：`/long_app/backend3-go-file`
+
 ### 1.5) 模型白名单（ai_models）
 
 - `/v1/models` 返回数据库表 `ai_models` 中 `enabled=1` 的模型
@@ -129,6 +135,41 @@ python tests/sdk_test.py
 ```
 
 预期输出包含：`models.list ok`、`chat non-stream ok`、`chat stream ok`、`ALL OK`。
+
+## Files API（可选加分）
+
+用于管理上传文件资源（文件内容落盘 + 元信息入库），接口风格参考 OpenAI Files API。
+
+### 1) 上传文件
+
+- `POST /v1/files`
+- 请求类型：`multipart/form-data`
+- 表单字段：
+  - `file`：文件（File）
+  - `purpose`：用途（Text，字符串，允许为空）
+
+返回：文件对象（`object=file`），包含 `id / bytes / created_at / filename / purpose` 等字段。
+
+### 2) 文件列表
+
+- `GET /v1/files`
+
+返回：`{ object: "list", data: [...] }`
+
+### 3) 获取文件元信息
+
+- `GET /v1/files/{file_id}`
+
+### 4) 删除文件
+
+- `DELETE /v1/files/{file_id}`
+
+返回：`{ id, object: "file", deleted: true }`
+
+### Postman 测试要点
+
+- 所有请求都需要 Header：`Authorization: Bearer <token>`
+- 上传请求 Body 选择 `form-data`，并把 `file` 的类型切换为 File
 
 ## AIGC 使用说明
 
