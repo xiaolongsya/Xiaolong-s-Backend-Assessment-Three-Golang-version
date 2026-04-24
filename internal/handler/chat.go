@@ -5,9 +5,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"openai-backend/internal/model"
+	"openai-backend/internal/dto"
 	"openai-backend/internal/repo"
 	"openai-backend/internal/service"
 	"openai-backend/internal/task"
@@ -17,45 +18,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
-
-type ChatCompletionRequest struct {
-	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
-	Stream      bool      `json:"stream"`
-	Temperature float64   `json:"temperature"`
-}
-
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type ChatCompletionResponse struct {
-	ID      string   `json:"id"`
-	Object  string   `json:"object"`
-	Created int64    `json:"created"`
-	Model   string   `json:"model"`
-	Choices []Choice `json:"choices"`
-}
-
-type Choice struct {
-	Index        int     `json:"index"`
-	Message      Message `json:"message"`
-	FinishReason string  `json:"finish_reason"`
-}
-
-type DeleteCompletionResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Deleted bool   `json:"deleted"`
-}
-
-type CancelCompletionResponse struct {
-	ID        string `json:"id"`
-	Object    string `json:"object"`
-	Cancelled bool   `json:"cancelled"`
-}
 
 var chatSvc = service.NewChatService(
 	repo.NewAIModelRepo(),
@@ -65,9 +29,14 @@ var chatSvc = service.NewChatService(
 
 // ChatCompletions 兼容 OpenAI Chat Completions：支持 stream=true/false，并将每次请求落库以便后续 GET/DELETE/CANCEL。
 func ChatCompletions(c *gin.Context) {
-	var req ChatCompletionRequest
+	var req dto.ChatCompletionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"message": "Invalid request body: " + err.Error(),
+				"type":    "invalid_request_error",
+			},
+		})
 		return
 	}
 
@@ -100,14 +69,14 @@ func ChatCompletions(c *gin.Context) {
 			return
 		}
 
-		resp := ChatCompletionResponse{
+		resp := dto.ChatCompletionResponse{
 			ID:      completionID,
 			Object:  "chat.completion",
 			Created: time.Now().Unix(),
 			Model:   req.Model,
-			Choices: []Choice{{
+			Choices: []dto.Choice{{
 				Index: 0,
-				Message: Message{
+				Message: dto.Message{
 					Role:    "assistant",
 					Content: "Hello! This is a mock response.",
 				},
@@ -188,14 +157,14 @@ func ChatCompletions(c *gin.Context) {
 			}
 		}
 
-		finalResp := ChatCompletionResponse{
+		finalResp := dto.ChatCompletionResponse{
 			ID:      completionID,
 			Object:  "chat.completion",
 			Created: time.Now().Unix(),
 			Model:   req.Model,
-			Choices: []Choice{{
+			Choices: []dto.Choice{{
 				Index: 0,
-				Message: Message{
+				Message: dto.Message{
 					Role:    "assistant",
 					Content: generated.String(),
 				},
@@ -256,14 +225,14 @@ func ChatCompletions(c *gin.Context) {
 	for _, part := range parts {
 		select {
 		case <-ctx.Done():
-			finalResp := ChatCompletionResponse{
+			finalResp := dto.ChatCompletionResponse{
 				ID:      completionID,
 				Object:  "chat.completion",
 				Created: time.Now().Unix(),
 				Model:   req.Model,
-				Choices: []Choice{{
+				Choices: []dto.Choice{{
 					Index:        0,
-					Message:      Message{Role: "assistant", Content: generated},
+					Message:      dto.Message{Role: "assistant", Content: generated},
 					FinishReason: "cancelled",
 				}},
 			}
@@ -282,14 +251,14 @@ func ChatCompletions(c *gin.Context) {
 		writeChunk(map[string]string{"content": part})
 	}
 
-	finalResp := ChatCompletionResponse{
+	finalResp := dto.ChatCompletionResponse{
 		ID:      completionID,
 		Object:  "chat.completion",
 		Created: time.Now().Unix(),
 		Model:   req.Model,
-		Choices: []Choice{{
+		Choices: []dto.Choice{{
 			Index:        0,
-			Message:      Message{Role: "assistant", Content: generated},
+			Message:      dto.Message{Role: "assistant", Content: generated},
 			FinishReason: "stop",
 		}},
 	}
@@ -303,27 +272,30 @@ func ChatCompletions(c *gin.Context) {
 // GetCompletion 通过 completion_id 查询生成结果
 func GetCompletion(c *gin.Context) {
 	id := c.Param("id")
-	var completion model.Completion
-	if err := model.DB.Where("completion_id = ?", id).First(&completion).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"message": "Not found", "type": "not_found"}})
+	respBytes, err := chatSvc.GetStoredResponse(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"message": "Not found", "type": "not_found"}})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"message": "Failed to get", "type": "internal_server_error"}})
 		return
 	}
-	c.Data(http.StatusOK, "application/json", []byte(completion.Response))
+	c.Data(http.StatusOK, "application/json", respBytes)
 }
 
 // DeleteCompletion 通过 completion_id 删除生成结果
 func DeleteCompletion(c *gin.Context) {
 	id := c.Param("id")
-	var completion model.Completion
-	if err := model.DB.Where("completion_id = ?", id).First(&completion).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"message": "Not found", "type": "not_found"}})
-		return
-	}
-	if err := model.DB.Delete(&completion).Error; err != nil {
+	if err := chatSvc.DeleteStoredCompletion(id); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"message": "Not found", "type": "not_found"}})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"message": "Failed to delete", "type": "internal_server_error"}})
 		return
 	}
-	c.JSON(http.StatusOK, DeleteCompletionResponse{ID: id, Object: "chat.completion.deleted", Deleted: true})
+	c.JSON(http.StatusOK, dto.DeleteCompletionResponse{ID: id, Object: "chat.completion.deleted", Deleted: true})
 }
 
 // CancelCompletion 取消正在进行的生成（仅对 stream=true 的任务有效）
@@ -334,5 +306,5 @@ func CancelCompletion(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, CancelCompletionResponse{ID: id, Object: "chat.completion.cancelled", Cancelled: true})
+	c.JSON(http.StatusOK, dto.CancelCompletionResponse{ID: id, Object: "chat.completion.cancelled", Cancelled: true})
 }

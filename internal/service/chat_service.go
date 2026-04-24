@@ -65,6 +65,18 @@ func (s *ChatService) MarkCancelled(completionID string, respBytes []byte, cance
 	})
 }
 
+func (s *ChatService) GetStoredResponse(completionID string) ([]byte, error) {
+	row, err := s.completions.GetByCompletionID(completionID)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(row.Response), nil
+}
+
+func (s *ChatService) DeleteStoredCompletion(completionID string) error {
+	return s.completions.DeleteByCompletionID(completionID)
+}
+
 func (s *ChatService) BuildAttempts(ownedBy string) []string {
 	primary := EnvKeySuffixFromOwnedBy(ownedBy)
 	fallbackMap := ParseUpstreamFallbacksFromEnv()

@@ -11,6 +11,7 @@ import (
 func main() {
 	model.InitDB()
 	r := gin.Default()
+	r.MaxMultipartMemory = 8 << 20
 	_ = r.SetTrustedProxies([]string{"127.0.0.1", "::1"})
 	r.Use(middleware.AuthMiddleware())
 	r.GET("/healthz", func(c *gin.Context) {

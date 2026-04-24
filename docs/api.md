@@ -14,6 +14,32 @@
   - `POST /v1/chat/completions` 会转发到上游 OpenAI 兼容接口（例如 MiniMax：`https://api.minimaxi.com/v1`）
   - 服务端会将上游返回的 `id` 统一改写为本服务生成的 `completion_id`，以确保 GET/DELETE/CANCEL 等生命周期接口一致
 
+可选加分（API 中转：多 provider / 多 key）：
+
+- 以数据库 `ai_models.owned_by` 作为 provider 标识（例如 `minimax/openai/aliyun/volcano`），服务端按 `owned_by` 自动选择对应上游配置
+- 同一 provider 可配置多个 key（逗号分隔），服务端会按 `completion_id` 做确定性选择（便于多 key 分摊）
+
+环境变量优先级（高 → 低）：
+
+- `UPSTREAM_<PROVIDER>_BASE_URL` → `UPSTREAM_BASE_URL`
+- `UPSTREAM_<PROVIDER>_API_KEYS` → `UPSTREAM_<PROVIDER>_API_KEY` → `UPSTREAM_API_KEY`
+
+可选（上游不可用自动回退）：
+
+- `UPSTREAM_FALLBACKS`：当 primary provider 不可用时，按配置顺序回退到其他 provider
+
+格式：
+
+```
+primary=fallback1,fallback2;another=fallbackX
+```
+
+示例：
+
+```powershell
+$env:UPSTREAM_FALLBACKS='volcano=minimax;minimax=volcano'
+```
+
 ## 通用错误返回
 
 鉴权失败（401）：
@@ -243,5 +269,72 @@ curl -H "Authorization: Bearer test-token" http://localhost:8091/v1/models
       "owned_by": "organization"
     }
   ]
+}
+```
+
+---
+
+## 5) Files（可选加分）
+
+说明：用于管理上传文件资源（落盘 + 元信息入库）。
+
+- 上传大小限制：20MB
+- 超限返回：`413 Payload Too Large`
+
+### `POST /v1/files`
+
+请求：`multipart/form-data`
+
+- `file`：文件（必填）
+- `purpose`：用途（可选字符串，例如 `assistants`）
+
+Postman：Body 选择 `form-data`，把 `file` 的类型切换为 File。
+
+响应：
+
+```json
+{
+  "id": "file-...",
+  "object": "file",
+  "bytes": 123,
+  "created_at": 1710000000,
+  "filename": "demo.txt",
+  "purpose": "assistants"
+}
+```
+
+### `GET /v1/files`
+
+响应：
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "file-...",
+      "object": "file",
+      "bytes": 123,
+      "created_at": 1710000000,
+      "filename": "demo.txt",
+      "purpose": "assistants"
+    }
+  ]
+}
+```
+
+### `GET /v1/files/{file_id}`
+
+返回单个文件元信息，结构同 `POST /v1/files`。
+
+### `DELETE /v1/files/{file_id}`
+
+响应：
+
+```json
+{
+  "id": "file-...",
+  "object": "file",
+  "deleted": true
 }
 ```

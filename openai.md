@@ -160,7 +160,7 @@ POST /v1/models
 
 ### 1. Files API
 
-可参考 OpenAI Files API 的资源模型与接口设计，用于管理模型生成或工具调用所需的文件资源。
+，用于管理模型生成可参考 OpenAI Files API 的资源模型与接口设计或工具调用所需的文件资源。
 
 - 文件上传 `POST /v1/files`
 - 文件删除 `DELETE /v1/files/{file_id}`

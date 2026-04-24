@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"openai-backend/internal/repo"
 	"openai-backend/internal/service"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -14,11 +15,33 @@ var fileSvc = service.NewFileService(repo.NewFileRepo())
 
 // CreateFile handles POST /v1/files (multipart/form-data: file, purpose)
 func CreateFile(c *gin.Context) {
+	const maxFileBytes int64 = 20 << 20
+	const maxBodyBytes int64 = 21 << 20
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
 	fh, err := c.FormFile("file")
 	if err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) || strings.Contains(strings.ToLower(err.Error()), "request body too large") {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"error": gin.H{
+					"message": "file size exceeds 20MB limit",
+					"type":    "invalid_request_error",
+				},
+			})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
 				"message": "file is required",
+				"type":    "invalid_request_error",
+			},
+		})
+		return
+	}
+	if fh.Size > maxFileBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+			"error": gin.H{
+				"message": "file size exceeds 20MB limit",
 				"type":    "invalid_request_error",
 			},
 		})

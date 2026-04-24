@@ -17,13 +17,18 @@ func NewModelService(repo *repo.AIModelRepo) *ModelService {
 	return &ModelService{repo: repo}
 }
 
-func toModelObject(m model.AIModel) dto.ModelObject {
+func toModelObject(m model.AIModel, includeEnabled bool) dto.ModelObject {
+	var enabled *bool
+	if includeEnabled {
+		e := m.Enabled
+		enabled = &e
+	}
 	return dto.ModelObject{
 		ID:      m.ModelID,
 		Object:  "model",
-		Created: m.Created,
+		Created: m.Created.Unix(),
 		OwnedBy: m.OwnedBy,
-		Enabled: m.Enabled,
+		Enabled: enabled,
 	}
 }
 
@@ -42,7 +47,7 @@ func (s *ModelService) ListEnabledModelsDTO() (dto.ModelListResponse, error) {
 	}
 	data := make([]dto.ModelObject, 0, len(rows))
 	for _, r := range rows {
-		data = append(data, toModelObject(r))
+		data = append(data, toModelObject(r, false))
 	}
 	return dto.ModelListResponse{Object: "list", Data: data}, nil
 }
@@ -54,7 +59,7 @@ func (s *ModelService) ListAllModelsDTO() (dto.ModelListResponse, error) {
 	}
 	data := make([]dto.ModelObject, 0, len(rows))
 	for _, r := range rows {
-		data = append(data, toModelObject(r))
+		data = append(data, toModelObject(r, true))
 	}
 	return dto.ModelListResponse{Object: "list", Data: data}, nil
 }
@@ -64,7 +69,7 @@ func (s *ModelService) UpdateEnabledDTO(modelID string, enabled bool) (dto.Model
 	if err != nil {
 		return dto.ModelObject{}, err
 	}
-	return toModelObject(m), nil
+	return toModelObject(m, true), nil
 }
 
 func (s *ModelService) UpdateEnabled(modelID string, enabled bool) (model.AIModel, error) {

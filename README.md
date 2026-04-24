@@ -7,6 +7,15 @@
 - Models 列表
 - MySQL 持久化（GORM AutoMigrate）
 
+可选加分：
+- Files API（文件上传/列表/元信息/删除；落盘 + 元信息入库；上传限制 20MB）
+- API 中转（多 provider / 多 key / 回退；按 `ai_models.owned_by` 选择上游）
+- 支持将模型生成请求转发给真实的模型服务
+- 至少支持两种不同的模型服务中转（比如 MINIMAX和火山引擎的deepseekv3.2）
+- 通过环境变量存储这些模型服务的鉴权密钥
+- 实现 WebUI 实现AI对话和文件管理
+
+
 ## 架构简述
 
 - `cmd/main.go`：路由注册与服务启动
@@ -67,6 +76,18 @@ $env:UPSTREAM_FALLBACKS='volcano=minimax;minimax=volcano'
 ```
 
 触发回退的情况（最小实现）：网络错误、HTTP 5xx、429、401、403。
+
+### API 中转（可选加分：已实现部分）
+
+对照 `openai.md` 的“API 中转”方向，本项目已实现：
+
+- 将 `POST /v1/chat/completions` 转发到真实上游（OpenAI 兼容）
+- 多 provider 配置（按 `ai_models.owned_by` 选择 `UPSTREAM_<PROVIDER>_*`）
+- 同一 provider 多 key（`UPSTREAM_<PROVIDER>_API_KEYS`）与自动回退（`UPSTREAM_FALLBACKS`）
+
+未实现：严格限流/限额管理、WebUI 配置管理。
+
+详细说明：见下方「API 中转（可选加分）」章节。
 
 示例（PowerShell）：
 
@@ -136,9 +157,51 @@ python tests/sdk_test.py
 
 预期输出包含：`models.list ok`、`chat non-stream ok`、`chat stream ok`、`ALL OK`。
 
+可通过环境变量覆盖：
+
+- `OPENAI_BASE_URL`：默认 `http://localhost:8091/v1`
+- `OPENAI_API_KEY`：默认 `test-token`
+
+## API 中转（可选加分）
+
+用于解决不同模型提供商 API/SDK 不统一的问题：后端对外保持 OpenAI 风格接口，对内按 provider 配置转发到真实上游（上游需提供 OpenAI 兼容的 `/chat/completions`）。
+
+已实现能力：
+
+- 多 provider：以数据库 `ai_models.owned_by` 作为 provider 标识，按 `owned_by` 选择 `UPSTREAM_<PROVIDER>_*` 配置
+- 多 key：支持 `UPSTREAM_<PROVIDER>_API_KEYS=key1,key2,...`，服务端按 `completion_id` 做“确定性选 key”以便分摊
+- 自动回退：支持 `UPSTREAM_FALLBACKS` 指定回退链（例如 `volcano=minimax;minimax=volcano`）
+  - 触发条件（最小实现）：网络错误、HTTP 5xx、429、401、403
+- 生命周期一致性：上游成功响应会被改写 `id` 为本服务生成的 `completion_id`，确保后续 GET/DELETE/CANCEL 能正确工作
+
+配置方式与示例：见上方“配置环境变量 → 上游转发/回退”段落。
+
+示例（MINIMAX + 火山引擎 deepseekv3.2）：
+
+```powershell
+$env:UPSTREAM_MINIMAX_BASE_URL='https://api.minimaxi.com/v1'
+$env:UPSTREAM_MINIMAX_API_KEYS='key-1,key-2'
+
+$env:UPSTREAM_VOLCANO_BASE_URL='https://<your-volcano-openai-compatible-base>/v1'
+$env:UPSTREAM_VOLCANO_API_KEY='vk-xxxx'
+
+$env:UPSTREAM_FALLBACKS='minimax=volcano;volcano=minimax'
+```
+
+未实现（不在交付承诺范围）：严格限流/限额管理。
+
+## Admin API（可选加分：已实现部分）
+
+用于初始化/运维 `ai_models`：
+
+- `GET /v1/admin/models`：列出所有模型（包含 `enabled=0/1`）
+- `PATCH /v1/admin/models/{model_id}`：更新某个模型是否启用（请求体：`{"enabled": true|false}`）
+
 ## Files API（可选加分）
 
 用于管理上传文件资源（文件内容落盘 + 元信息入库），接口风格参考 OpenAI Files API。
+
+WebUI 对应：项目提供 WebUI 的“文件管理”面板（上传/列表/详情/删除），即调用本节的 `/v1/files` 系列接口。
 
 ### 1) 上传文件
 
@@ -147,6 +210,11 @@ python tests/sdk_test.py
 - 表单字段：
   - `file`：文件（File）
   - `purpose`：用途（Text，字符串，允许为空）
+
+限制：
+
+- 上传大小限制：20MB
+- 超限返回：`413 Payload Too Large`
 
 返回：文件对象（`object=file`），包含 `id / bytes / created_at / filename / purpose` 等字段。
 
@@ -181,6 +249,19 @@ python tests/sdk_test.py
 
 - 接口文档：`docs/api.md`
 - Push 说明：`docs/push_notes.md`
+- OpenAPI：`docs/openapi.yaml`
+
+## WebUI（可选加分）
+
+提供一个 Vue3/Vite 的 WebUI，用于：
+
+- AI 对话（调用 `/v1/chat/completions`，支持流式/非流式）
+- 文件管理（调用 `/v1/files`：上传/列表/详情/删除）
+
+说明：WebUI 为独立前端工程（例如同级目录 `backend3-go-fronted`），通过环境变量配置后端地址与 token。
+
+- `VITE_API_BASE_URL`：后端 base url（示例：`http://localhost:8091`）
+- `VITE_API_TOKEN`：Bearer token（示例：`test-token`）
 
 ## 1Panel 部署提示（简要）
 

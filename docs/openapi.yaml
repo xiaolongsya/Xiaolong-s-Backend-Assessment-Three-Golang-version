@@ -11,6 +11,8 @@ info:
     - Models 列表（来自 ai_models，且作为 chat 的 model 白名单）
 
 servers:
+  - url: http://localhost:8091
+    description: 本地
   - url: https://backend3.xiaolongya.cn
     description: 线上（推荐：通过 Nginx/OpenResty 反代 /v1 到 8091）
 
@@ -25,7 +27,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: JWT
+      bearerFormat: Bearer
       description: |
         Apifox 示例：`Authorization: Bearer xiaolong`
 
@@ -170,7 +172,7 @@ components:
           format: int64
         owned_by:
           type: string
-      required: [id, object]
+      required: [id, object, created, owned_by]
 
     ModelListResponse:
       type: object
@@ -476,7 +478,11 @@ paths:
     post:
       tags: [文件管理]
       summary: 上传文件
-      description: multipart/form-data，字段 file（文件） + purpose（文本）。
+      description: |
+        multipart/form-data，字段 file（文件） + purpose（文本）。
+
+        - 文件大小限制：20MB
+        - 超出限制返回：413 Payload Too Large
       parameters:
         - $ref: '#/components/parameters/AuthorizationHeader'
       requestBody:
@@ -500,6 +506,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FileObject'
+        '413':
+          description: 文件过大（> 20MB）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
         '400':
           description: 请求参数错误（例如缺少 file）
           content:
