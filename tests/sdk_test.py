@@ -2,8 +2,8 @@ import os
 
 from openai import OpenAI
 
-BASE_URL = os.getenv("OPENAI_BASE_URL", "http://localhost:8091/v1")
-API_KEY = os.getenv("OPENAI_API_KEY", "test-token")  # 你的 Bearer token
+BASE_URL = os.getenv("OPENAI_BASE_URL", "http://xiaolongya.cn:8091/v1")
+API_KEY = os.getenv("OPENAI_API_KEY", "xiaolong")  # 你的 Bearer token
 
 client = OpenAI(
     base_url=BASE_URL,
