@@ -138,3 +138,15 @@
 - 官方 OpenAI Python SDK：`tests/sdk_test.py`（`from openai import OpenAI`）
 - 可配置 base_url / api_key：`tests/sdk_test.py`（`OPENAI_BASE_URL/OPENAI_API_KEY`）
 - 覆盖 models + chat 非流式 + chat 流式：`tests/sdk_test.py`
+
+## 提交摘要
+
+- 已覆盖 openai.md 的 MVP 要求：鉴权、Chat Completions、模型白名单、结果持久化与生命周期管理、SDK 可用性验证
+- 已实现加分项：Files API、API 中转（多 provider / 多 key / 回退）、Admin API、WebUI 文件管理与对话入口
+- 构建状态：后端 `go build ./...` 通过；前端 `npm run build` 通过
+
+## 已知限制
+
+- `POST /v1/chat/completions/:id/cancel` 的任务取消目前采用进程内注册表，单实例可用，多实例需要进一步做分布式任务协调
+- Files API 当前落盘到本地磁盘目录，适合考核与单机部署；生产环境建议接对象存储并补充总量配额
+- `tests/sdk_test.py` 默认指向云端验收地址，本地复现时建议显式设置 `OPENAI_BASE_URL=http://localhost:8091/v1`

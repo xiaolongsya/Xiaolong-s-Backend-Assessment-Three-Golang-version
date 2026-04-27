@@ -3,118 +3,127 @@ info:
   title: OpenAI 风格后端 API
   version: 1.0.0
   description: |
-    Go + Gin + MySQL 的 OpenAI 风格后端接口。
+    这是一个可直接导入 Apifox 的中文 OpenAPI 3.0.3 接口说明文件。
+    项目基于 Go + Gin + MySQL，实现了 OpenAI 风格的对话、模型、文件与管理接口。
 
-    - 全接口 Bearer Token 鉴权
+    支持内容：
+    - Bearer Token 鉴权
     - Chat Completions（流式 SSE / 非流式）
-    - 生成结果管理（GET / DELETE / CANCEL）
-    - Models 列表（来自 ai_models，且作为 chat 的 model 白名单）
+    - 生成结果查询、删除、取消
+    - 模型列表与管理接口
+    - 文件上传、列表、详情、删除
 
 servers:
   - url: http://localhost:8091
-    description: 本地
+    description: 本地环境
   - url: https://backend3.xiaolongya.cn
-    description: 线上（推荐：通过 Nginx/OpenResty 反代 /v1 到 8091）
+    description: 线上环境
 
 tags:
   - name: 健康检查
+    description: 服务健康检查
   - name: 对话生成
-  - name: 模型列表
+    description: Chat Completions 相关接口
+  - name: 模型管理
+    description: 模型列表与启用禁用接口
   - name: 文件管理
+    description: 文件上传与元信息管理接口
 
 components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: Bearer
-      description: |
-        Apifox 示例：`Authorization: Bearer xiaolong`
-
-  parameters:
-    AuthorizationHeader:
-      name: Authorization
-      in: header
-      required: true
-      description: Bearer Token（示例：Bearer xiaolong）
-      schema:
-        type: string
-        example: Bearer xiaolong
-
-    ContentTypeJsonHeader:
-      name: Content-Type
-      in: header
-      required: true
-      description: JSON 请求体
-      schema:
-        type: string
-        example: application/json
-
   schemas:
     ErrorEnvelope:
       type: object
+      description: OpenAI 风格错误返回
       properties:
         error:
           type: object
+          required:
+            - message
+            - type
           properties:
             message:
               type: string
+              description: 错误信息
+              example: Invalid API key
             type:
               type: string
-          required: [message, type]
-      required: [error]
+              description: 错误类型
+              example: authentication_error
+      required:
+        - error
 
     HealthResponse:
       type: object
+      description: 健康检查返回体
       properties:
         status:
           type: string
           example: ok
-      required: [status]
+      required:
+        - status
 
     Message:
       type: object
+      description: 聊天消息
       properties:
         role:
           type: string
+          description: 消息角色
           enum: [system, user, assistant]
         content:
           type: string
-      required: [role, content]
+          description: 消息内容
+      required:
+        - role
+        - content
 
     ChatCompletionRequest:
       type: object
+      description: Chat Completions 请求体
       properties:
         model:
           type: string
-          description: 必须在 ai_models 表中存在且 enabled=1
+          description: 模型名称，必须存在于 ai_models 表且 enabled=1
+          example: MiniMax-M2.7
         messages:
           type: array
+          description: 消息列表
           items:
             $ref: '#/components/schemas/Message'
         stream:
           type: boolean
+          description: 是否流式返回
           default: false
         temperature:
           type: number
           format: double
+          description: 温度参数
           default: 0.7
-      required: [model, messages]
+      required:
+        - model
+        - messages
 
     ChatCompletionChoice:
       type: object
+      description: 对话响应中的选择项
       properties:
         index:
           type: integer
+          description: 序号
+          example: 0
         message:
           $ref: '#/components/schemas/Message'
         finish_reason:
           type: string
           nullable: true
-      required: [index]
+          description: 结束原因
+          example: stop
+      required:
+        - index
 
     ChatCompletionResponse:
       type: object
+      description: 非流式对话响应
       properties:
         id:
           type: string
@@ -125,57 +134,88 @@ components:
         created:
           type: integer
           format: int64
+          example: 1710000000
         model:
           type: string
+          example: MiniMax-M2.7
         choices:
           type: array
           items:
             $ref: '#/components/schemas/ChatCompletionChoice'
-      required: [id, object, created, model, choices]
+      required:
+        - id
+        - object
+        - created
+        - model
+        - choices
 
     DeleteCompletionResponse:
       type: object
+      description: 删除对话结果返回
       properties:
         id:
           type: string
+          example: chatcmpl-xxxx
         object:
           type: string
           example: chat.completion.deleted
         deleted:
           type: boolean
           example: true
-      required: [id, object, deleted]
+      required:
+        - id
+        - object
+        - deleted
 
     CancelCompletionResponse:
       type: object
+      description: 取消对话返回
       properties:
         id:
           type: string
+          example: chatcmpl-xxxx
         object:
           type: string
           example: chat.completion.cancelled
         cancelled:
           type: boolean
           example: true
-      required: [id, object, cancelled]
+      required:
+        - id
+        - object
+        - cancelled
 
-    Model:
+    ModelObject:
       type: object
+      description: 模型信息
       properties:
         id:
           type: string
+          example: MiniMax-M2.7
         object:
           type: string
           example: model
         created:
           type: integer
           format: int64
+          example: 1710000000
         owned_by:
           type: string
-      required: [id, object, created, owned_by]
+          example: minimax
+        enabled:
+          type: boolean
+          nullable: true
+          description: 是否启用，仅管理接口返回该字段
+          example: true
+      required:
+        - id
+        - object
+        - created
+        - owned_by
 
     ModelListResponse:
       type: object
+      description: 模型列表返回
       properties:
         object:
           type: string
@@ -183,11 +223,25 @@ components:
         data:
           type: array
           items:
-            $ref: '#/components/schemas/Model'
-      required: [object, data]
+            $ref: '#/components/schemas/ModelObject'
+      required:
+        - object
+        - data
+
+    UpdateModelEnabledRequest:
+      type: object
+      description: 模型启用禁用请求
+      properties:
+        enabled:
+          type: boolean
+          description: 是否启用
+          example: true
+      required:
+        - enabled
 
     FileObject:
       type: object
+      description: 文件元信息
       properties:
         id:
           type: string
@@ -209,10 +263,17 @@ components:
         purpose:
           type: string
           example: assistants
-      required: [id, object, bytes, created_at, filename, purpose]
+      required:
+        - id
+        - object
+        - bytes
+        - created_at
+        - filename
+        - purpose
 
     FileListResponse:
       type: object
+      description: 文件列表返回
       properties:
         object:
           type: string
@@ -221,10 +282,13 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FileObject'
-      required: [object, data]
+      required:
+        - object
+        - data
 
     FileDeleteResponse:
       type: object
+      description: 文件删除返回
       properties:
         id:
           type: string
@@ -235,18 +299,25 @@ components:
         deleted:
           type: boolean
           example: true
-      required: [id, object, deleted]
-
-security:
-  - bearerAuth: []
+      required:
+        - id
+        - object
+        - deleted
 
 paths:
   /healthz:
     get:
       tags: [健康检查]
       summary: 健康检查
+      description: 用于确认服务是否正常启动
       parameters:
-        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: Authorization
+          in: header
+          required: true
+          description: 鉴权头，固定写法：Bearer xiaolong
+          schema:
+            type: string
+          example: "Bearer xiaolong"
       responses:
         '200':
           description: 成功
@@ -254,6 +325,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
         '401':
           description: 未授权
           content:
@@ -263,10 +336,17 @@ paths:
 
   /v1/models:
     get:
-      tags: [模型列表]
-      summary: 获取模型列表（来自 ai_models，且 enabled=1）
+      tags: [模型管理]
+      summary: 获取可用模型列表
+      description: 返回 ai_models 表中 enabled=1 的模型
       parameters:
-        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: Authorization
+          in: header
+          required: true
+          description: 鉴权头，固定写法：Bearer xiaolong
+          schema:
+            type: string
+          example: "Bearer xiaolong"
       responses:
         '200':
           description: 成功
@@ -281,10 +361,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
     post:
-      tags: [模型列表]
-      summary: 获取模型列表（POST 兼容接口）
+      tags: [模型管理]
+      summary: 获取可用模型列表（兼容 POST）
+      description: 与 GET /v1/models 返回相同内容，便于兼容部分客户端
       parameters:
-        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: Authorization
+          in: header
+          required: true
+          description: 鉴权头，固定写法：Bearer xiaolong
+          schema:
+            type: string
+          example: "Bearer xiaolong"
       responses:
         '200':
           description: 成功
@@ -299,17 +386,105 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
 
+  /v1/admin/models:
+    get:
+      tags: [模型管理]
+      summary: 获取全部模型
+      description: 返回所有模型，包含 enabled=0/1，适合后台管理页面使用
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          description: 鉴权头，固定写法：Bearer xiaolong
+          schema:
+            type: string
+          example: "Bearer xiaolong"
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelListResponse'
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
+  /v1/admin/models/{model_id}:
+    patch:
+      tags: [模型管理]
+      summary: 启用或禁用模型
+      description: 通过 enabled 字段切换模型状态
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          description: 鉴权头，固定写法：Bearer xiaolong
+          schema:
+            type: string
+          example: "Bearer xiaolong"
+        - name: model_id
+          in: path
+          required: true
+          description: 模型名称
+          schema:
+            type: string
+          example: MiniMax-M2.7
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateModelEnabledRequest'
+            example:
+              enabled: true
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelObject'
+        '400':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '404':
+          description: 模型不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+
   /v1/chat/completions:
     post:
       tags: [对话生成]
-      summary: 发起对话生成（流式/非流式）
+      summary: 创建对话生成任务
       description: |
-        - 当 stream=false（默认）：返回 application/json
-        - 当 stream=true：返回 text/event-stream（SSE），逐行输出 `data: <json>`，以 `data: [DONE]` 结束
-        - model 必须在 ai_models 表中存在且 enabled=1，否则 400
+        支持流式和非流式两种返回方式。
+
+        - stream=false：返回 JSON
+        - stream=true：返回 SSE（text/event-stream），数据使用 data: 形式逐行输出，最后以 data: [DONE] 结束
+        - model 必须在 ai_models 表中存在且 enabled=1
       parameters:
-        - $ref: '#/components/parameters/AuthorizationHeader'
-        - $ref: '#/components/parameters/ContentTypeJsonHeader'
+        - name: Authorization
+          in: header
+          required: true
+          description: 鉴权头，固定写法：Bearer xiaolong
+          schema:
+            type: string
+          example: "Bearer xiaolong"
       requestBody:
         required: true
         content:
@@ -317,22 +492,22 @@ paths:
             schema:
               $ref: '#/components/schemas/ChatCompletionRequest'
             examples:
-              non_stream:
-                summary: Non-stream
+              非流式示例:
+                summary: 非流式
                 value:
                   model: MiniMax-M2.7
                   messages:
                     - role: user
-                      content: Hello
+                      content: 你好
                   temperature: 0.7
                   stream: false
-              stream:
-                summary: Stream
+              流式示例:
+                summary: 流式
                 value:
                   model: MiniMax-M2.7
                   messages:
                     - role: user
-                      content: Stream test
+                      content: 流式测试
                   temperature: 0.7
                   stream: true
       responses:
@@ -345,27 +520,22 @@ paths:
             text/event-stream:
               schema:
                 type: string
-              examples:
-                sse_example:
-                  summary: SSE example
-                  value: |
-                    data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":1710000000,"model":"MiniMax-M2.7","choices":[{"index":0,"delta":{"role":"assistant"}}]}
+              example: |
+                data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":1710000000,"model":"MiniMax-M2.7","choices":[{"index":0,"delta":{"role":"assistant"}}]}
 
-                    data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":1710000001,"model":"MiniMax-M2.7","choices":[{"index":0,"delta":{"content":"hello "}}]}
+                data: {"id":"chatcmpl-...","object":"chat.completion.chunk","created":1710000001,"model":"MiniMax-M2.7","choices":[{"index":0,"delta":{"content":"你好 "}}]}
 
-                    data: [DONE]
+                data: [DONE]
         '400':
-          description: 请求参数错误（例如 model 不在白名单）
+          description: 请求参数错误
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
-              examples:
-                model_not_available:
-                  value:
-                    error:
-                      message: Model not available
-                      type: invalid_request_error
+              example:
+                error:
+                  message: Model not available
+                  type: invalid_request_error
         '401':
           description: 未授权
           content:
@@ -373,7 +543,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
         '502':
-          description: 网关错误（上游转发失败）
+          description: 上游转发失败
           content:
             application/json:
               schema:
@@ -382,12 +552,19 @@ paths:
   /v1/chat/completions/{id}:
     get:
       tags: [对话生成]
-      summary: 获取生成结果（按 id）
+      summary: 获取指定生成结果
       parameters:
-        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: Authorization
+          in: header
+          required: true
+          description: 鉴权头，固定写法：Bearer xiaolong
+          schema:
+            type: string
+          example: "Bearer xiaolong"
         - name: id
           in: path
           required: true
+          description: 生成结果 ID
           schema:
             type: string
           example: chatcmpl-xxxx
@@ -410,14 +587,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+
     delete:
       tags: [对话生成]
-      summary: 删除生成结果（按 id）
+      summary: 删除指定生成结果
       parameters:
-        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: Authorization
+          in: header
+          required: true
+          description: 鉴权头，固定写法：Bearer xiaolong
+          schema:
+            type: string
+          example: "Bearer xiaolong"
         - name: id
           in: path
           required: true
+          description: 生成结果 ID
           schema:
             type: string
           example: chatcmpl-xxxx
@@ -444,13 +629,20 @@ paths:
   /v1/chat/completions/{id}/cancel:
     post:
       tags: [对话生成]
-      summary: 取消正在进行的流式生成
-      description: 仅对 stream=true 的任务有效；找不到任务返回 404。
+      summary: 取消正在进行的生成任务
+      description: 仅对流式任务有效
       parameters:
-        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: Authorization
+          in: header
+          required: true
+          description: 鉴权头，固定写法：Bearer xiaolong
+          schema:
+            type: string
+          example: "Bearer xiaolong"
         - name: id
           in: path
           required: true
+          description: 生成结果 ID
           schema:
             type: string
           example: chatcmpl-xxxx
@@ -479,12 +671,19 @@ paths:
       tags: [文件管理]
       summary: 上传文件
       description: |
-        multipart/form-data，字段 file（文件） + purpose（文本）。
+        以 multipart/form-data 上传文件。
 
-        - 文件大小限制：20MB
-        - 超出限制返回：413 Payload Too Large
+        - file 为必填文件字段
+        - purpose 为用途字段，可为空
+        - 单文件大小限制 20MB，超出返回 413
       parameters:
-        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: Authorization
+          in: header
+          required: true
+          description: 鉴权头，固定写法：Bearer xiaolong
+          schema:
+            type: string
+          example: "Bearer xiaolong"
       requestBody:
         required: true
         content:
@@ -494,11 +693,14 @@ paths:
               properties:
                 purpose:
                   type: string
+                  description: 文件用途
                   example: assistants
                 file:
                   type: string
                   format: binary
-              required: [file]
+                  description: 要上传的文件
+              required:
+                - file
       responses:
         '200':
           description: 成功
@@ -506,14 +708,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FileObject'
-        '413':
-          description: 文件过大（> 20MB）
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
         '400':
-          description: 请求参数错误（例如缺少 file）
+          description: 请求参数错误
           content:
             application/json:
               schema:
@@ -524,8 +720,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
-        '500':
-          description: 服务端错误
+        '413':
+          description: 文件过大
           content:
             application/json:
               schema:
@@ -535,7 +731,13 @@ paths:
       tags: [文件管理]
       summary: 获取文件列表
       parameters:
-        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: Authorization
+          in: header
+          required: true
+          description: 鉴权头，固定写法：Bearer xiaolong
+          schema:
+            type: string
+          example: "Bearer xiaolong"
       responses:
         '200':
           description: 成功
@@ -549,22 +751,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
-        '500':
-          description: 服务端错误
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
 
   /v1/files/{file_id}:
     get:
       tags: [文件管理]
-      summary: 获取文件元信息
+      summary: 获取文件详情
       parameters:
-        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: Authorization
+          in: header
+          required: true
+          description: 鉴权头，固定写法：Bearer xiaolong
+          schema:
+            type: string
+          example: "Bearer xiaolong"
         - name: file_id
           in: path
           required: true
+          description: 文件 ID
           schema:
             type: string
           example: file-xxxx
@@ -587,21 +790,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
-        '500':
-          description: 服务端错误
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
 
     delete:
       tags: [文件管理]
-      summary: 删除文件（硬删DB+删除落盘文件）
+      summary: 删除文件
       parameters:
-        - $ref: '#/components/parameters/AuthorizationHeader'
+        - name: Authorization
+          in: header
+          required: true
+          description: 鉴权头，固定写法：Bearer xiaolong
+          schema:
+            type: string
+          example: "Bearer xiaolong"
         - name: file_id
           in: path
           required: true
+          description: 文件 ID
           schema:
             type: string
           example: file-xxxx
@@ -620,12 +824,6 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
         '404':
           description: 未找到
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-        '500':
-          description: 服务端错误
           content:
             application/json:
               schema:

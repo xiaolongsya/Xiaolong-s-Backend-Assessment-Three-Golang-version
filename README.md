@@ -159,8 +159,10 @@ python tests/sdk_test.py
 
 可通过环境变量覆盖：
 
-- `OPENAI_BASE_URL`：默认 `http://localhost:8091/v1`
+- `OPENAI_BASE_URL`：默认 `http://xiaolongya.cn:8091/v1`，本地运行请改成 `http://localhost:8091/v1`
 - `OPENAI_API_KEY`：默认 `test-token`
+
+说明：SDK 脚本当前默认面向云端验收地址；如果在本地联调，建议显式设置 `OPENAI_BASE_URL=http://localhost:8091/v1` 再执行。
 
 ## API 中转（可选加分）
 
