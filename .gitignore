@@ -1,0 +1,26 @@
+# Go
+bin/
+*.exe
+*.out
+*.test
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Python venv
+tests/.venv/
+.venv/
+
+# Dependency
+vendor/
+
+# Env & secrets
+.env
+.env.*
+
+# System
+.DS_Store
+Thumbs.db

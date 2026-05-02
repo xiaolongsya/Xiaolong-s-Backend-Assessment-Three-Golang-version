@@ -1,3 +1,28 @@
+# 环境变量配置说明
+
+本项目所有运行参数均通过 .env 文件集中配置，考核包已内置示例，考核者无需手动设置环境变量。
+
+**主要环境变量说明：**
+
+- `MYSQL_DSN`：MySQL 连接串，已配置为云端数据库，无需本地安装 MySQL。
+  - 示例：`MYSQL_DSN=xiaolong:2ethZZBiMQEw5Ppj@tcp(xiaolongya.cn:3306)/kaohe3-go?charset=utf8mb4&parseTime=True&loc=Local`
+- `API_TOKENS`：允许访问的 Bearer Token，多个用逗号分隔。默认已配置。
+- `UPSTREAM_BASE_URL` / `UPSTREAM_API_KEY`：上游 OpenAI 兼容服务地址与密钥（如需转发）。
+- `UPSTREAM_<PROVIDER>_BASE_URL` / `UPSTREAM_<PROVIDER>_API_KEYS`：多 provider 支持，按 ai_models.owned_by 自动选择。
+- `UPSTREAM_FALLBACKS`：上游不可用时的回退链配置。
+- `FILE_STORAGE_DIR`：文件上传存储目录，未配置时默认写入 ./data/files。
+- `GOPROXY`：Go 依赖代理，国内建议保持默认。
+
+**使用说明：**
+
+1. 直接运行 backend.exe 即可，程序会自动加载同目录下的 .env 文件。
+2. 所有环境变量均可在 .env 文件中修改，无需手动 export/set。
+3. 如需自定义数据库或 token，仅需编辑 .env 文件对应项。
+
+**安全提示：**
+
+如用于正式环境，请更换为专用数据库账号和 token，考核结束后可删除云端数据库或更改密码。
+
 # OpenAI 风格后端（Go + Gin + MySQL）
 
 本项目实现（部分）OpenAI API 风格接口，支持：

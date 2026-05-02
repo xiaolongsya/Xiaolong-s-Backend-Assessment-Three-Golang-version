@@ -1,0 +1,95 @@
+主要项目经历（详细版，可直接粘贴 Boss）
+
+项目一：OpenAI 规范对话中转服务器（考核三 / Go 版）
+担任角色：后端负责人 / 独立开发（Go）
+项目描述：
+1. 用 Go（Gin + GORM + MySQL）实现“部分 OpenAI API 语义”的后端服务，对外提供统一的模型调用接口，对内可转发到不同上游模型服务。
+2. 支持 Chat Completions（SSE 流式与非流式）：stream=true 时返回 text/event-stream，按 chunk 增量输出，并以 data: [DONE] 结束；stream=false 一次性返回标准 JSON。
+3. 全接口 Bearer Token 鉴权：通过中间件统一校验 Authorization: Bearer <token>，非法返回 401，并返回 OpenAI 风格错误结构。
+4. 生成请求全生命周期：为每次生成创建唯一 completion_id，支持结果查询（GET）、删除（DELETE）与流式任务取消（CANCEL），并将 request/response 持久化到 MySQL。
+5. 模型白名单机制：模型列表来源于数据库 ai_models（enabled=1），Chat 请求的 model 必须存在且启用，避免在代码里硬编码模型。
+6. 可选扩展：Files API（上传/列表/详情/删除），文件落盘 + 元信息入库，并限制上传大小 20MB，超限返回 413。
+7. 可选扩展：上游中转（多 provider / 多 key / 自动回退），按 ai_models.owned_by 选择上游配置；支持同 provider 多 key 分摊；对网络错误、HTTP 5xx、429、401、403 触发回退；并改写上游返回 id 保证生命周期接口一致。
+项目业绩（可观测/可核验）：
+1. 完成一套可被官方 SDK 直接调用的接口实现：使用官方 OpenAI Python SDK 编写回归脚本，验证 models.list、chat 非流式、chat 流式均可正确解析（具备“兼容性证据”）。
+2. 覆盖核心接口链路（可在文档中核验）：healthz、/v1/models、/v1/chat/completions（stream true/false）、/v1/chat/completions/{id}（GET/DELETE/CANCEL）；并提供 OpenAPI（可导入 Apifox）。
+3. 将“流式生成”做成真正的服务端流（SSE），而非伪流式：支持逐块输出与取消请求，适配前端/客户端的实时渲染场景。
+4. 将生成过程持久化落库，支持后续审计/复查：请求与响应均入库，记录状态（running/completed/failed/cancelled）与取消时间，便于排查与运维。
+5. 通过配置化方式接入上游模型服务：使用环境变量管理上游 base_url 与 key，多 provider 与回退链可快速扩展新厂商，降低接入成本。
+项目链接：
+- https://github.com/xiaolongsya/Xiaolong-s-Backend-Assessment-Three
+
+项目二：个人博客系统（全栈）
+担任角色：全栈开发 / 架构与核心功能实现
+项目描述：
+1. 前后端分离博客系统：前端 Vue3，后端 SpringBoot，数据库 MySQL，缓存 Redis，鉴权采用 JWT。
+2. 覆盖常见内容产品的核心模块：用户登录/权限、文章发布与管理、评论互动等业务链路，并打通前后端接口联调。
+3. 接入 AI 能力：结合数据库内容做 Embedding 向量检索，支持语义搜索/AI 问答/智能内容推荐等能力，为内容检索体验提供“语义层”增强。
+项目业绩（可观测/可展示）：
+1. 独立完成全栈闭环：从数据库表设计、后端接口、前端页面到登录态管理与联调上线流程，形成可演示的完整产品。
+2. 将 AI 功能落到“可用场景”：不是单纯调用模型，而是结合库内内容做检索与推荐，让 AI 能服务于真实业务数据。
+3. 工程化可扩展：前后端分离、接口清晰，便于后续增加更多内容类型、推荐策略与运营功能。
+项目链接：
+- 前端：https://github.com/xiaolongsya/blog-fronted
+- 后端：https://github.com/xiaolongsya/blog-backend
+
+项目三：个人基金量化系统（两代版本）
+担任角色：核心开发 / 策略与系统实现
+项目描述：
+1. 构建量化分析与策略验证链路：围绕基金数据分析、策略回测、信号生成与风险控制，形成“数据→策略→验证→输出”的闭环。
+2. 迭代两代版本：第一代实现基础策略与流程；第二代在策略稳定性、执行效率与可扩展性上进行重构优化，并沉淀可复用组件。
+3. 引入多因子思路（第二代）：将多个特征/因子纳入策略决策，增强信号稳定性与可解释性。
+项目业绩（可观测/可展示）：
+1. 两代系统持续迭代：同一业务目标通过架构与策略升级实现“从能跑到更稳、更快、更可扩展”的演进路径。
+2. 完整覆盖量化常见模块：数据处理、回测评估、风险控制与信号输出（可在代码结构与模块划分中体现）。
+3. 工程化思维：将策略与工程分离，便于后续扩展更多策略类型、回测指标与数据源。
+项目链接：
+- 第一代：https://github.com/xiaolongsya/fund-quantification
+- 第二代：https://github.com/xiaolongsya/fund-quantification-2
+
+项目四：滑雪工具智能推荐小程序（完整前后端 / 客户定制）
+担任角色：全栈开发（前端 + 后端）
+项目描述：
+1. 面向小程序使用场景，搭建“用户偏好采集→推荐计算→结果展示”的推荐闭环，支持按用户画像与场景做匹配输出。
+2. 后端提供标准化接口：承载用户数据、偏好数据与推荐结果的读写，支持常用 CRUD、列表查询与详情查询，便于运营维护。
+3. 前端实现完整交互：偏好问答/表单输入、推荐结果展示、空态与异常提示等，保证用户能顺畅完成推荐流程。
+4. 配套后台管理：支持推荐数据/规则的维护（可按项目实际替换为“商品/装备/配置”等），降低后期改动成本。
+项目业绩（可观测/可展示）：
+1. 交付闭环能力：完成从需求对齐、接口设计、联调排错到上线交付的完整过程，具备真实客户项目交付经验。
+2. 推荐链路可落地：将推荐逻辑做成可复用的规则/打分流程，并输出可解释的推荐结果，方便用户理解与选择。
+3. 稳定性与可维护性：对输入参数做校验与兜底，接口错误可定位；沉淀接口文档与联调说明，后续迭代效率更高。
+4. 可替换指标（建议你补充具体数字更“硬核”）：支持 N+ 种偏好维度；覆盖 N+ 类装备/商品；上线后累计服务 N+ 用户/请求。
+项目链接：
+- 前端：https://github.com/xiaolongsya/huaxuexiaochengxu-front
+- 后端：https://github.com/xiaolongsya/huaxuexiaochengxu-backend
+
+项目五：Go 语言学习与实践项目（go-study / go-rest-api）
+担任角色：作者 / 维护者
+项目描述：
+1. go-study：系统梳理 Go 语言核心知识点（基础语法、数据结构、并发编程、泛型等），并配套练习案例。
+2. go-rest-api：基于 Go 实现标准 RESTful API 服务，包含路由管理、数据库操作与接口规范等模块，强调“工程可复用”。
+项目业绩（可观测/可展示）：
+1. 系统性沉淀学习成果：将零散知识整理为可复用仓库，便于复盘与对外展示学习路径。
+2. 用小项目验证理解：将 Go 基础能力落到可运行的 API 工程上，为后续 Go 后端项目打底。
+项目链接：
+- go-study：https://github.com/xiaolongsya/go-study
+- go-rest-api：https://github.com/xiaolongsya/go-rest-api
+
+项目六：校园智能导游软件 CampusLife Compass（团队竞赛 / 私密）
+担任角色：后端负责人（Java / Spring Boot）
+项目描述：
+1. 搭建“校园生活足迹 + 智能规划 + 社区分享”的服务端能力，面向移动端（Uni-app + Vue3）提供 RESTful API。
+2. 后端技术栈：Spring Boot + MyBatis-Plus + MySQL（utf8mb4），统一 Result 返回结构；使用 JWT 拦截器实现 Bearer Token 鉴权与用户身份注入。
+3. 核心业务模块（可在数据库与 Controller 中核验）：用户体系、地点/POI、足迹打卡（footprint）、路线模板与节点（route_template/route_node）、社区互动（点赞/评论/收藏/克隆）、推送记录、AI 分析报告与规划请求留痕。
+4. 足迹模块：支持分页查询与筛选（类型、时间范围），提供创建/更新/删除（软删 status=0）与详情查询接口，支撑“地图足迹 + 时间线 + 数据统计”的上层展示。
+5. 地点库模块：实现热门地点表 popular_place 及查询接口（按分类/区域/消费水平/详情），并维护一套“校内+校外”样例数据（文档列出 25 个热门地点），为智能推荐提供候选集。
+6. AI 智能服务（纯 Java 实现）：提供用户行为模式分析、活动预测、周报/月报生成与智能路线推荐接口（/ai/analyze、/ai/predict、/ai/report/{type}、/ai/recommend-route），支持时间与预算等约束输入。
+7. 接口可视化与联调：启用 SpringDoc/Swagger（白名单放行），便于前后端与团队快速联调与验收。
+项目业绩（可观测/可展示）：
+1. 设计并落地 12 张核心业务表（user、poi、footprint、shared_footprint_card、route_template、route_node、user_preference、social_interaction、report、push_notification、user_behavior_pattern、route_plan_request），支撑记录-分析-规划-分享的完整闭环。
+2. 实现 AIAnalysisService（纯 Java 统计/规则算法）替代 Python 依赖：同一进程内完成分析/预测/报告/路线推荐，降低部署复杂度并提升可维护性（文档与代码均可核验）。
+3. 将“推荐”从概念落到数据驱动：地点库支持分类/区域/预算筛选（cost_level），结合用户历史足迹与偏好，输出推荐地点与推荐理由。
+4. 保障接口可用性与可扩展：分页查询（Page）、筛选参数设计、统一异常/错误返回与鉴权拦截，减少前后端联调成本。
+5. 推进团队交付：统一接口约定与鉴权方式（Authorization: Bearer），对齐前端数据结构，按期完成竞赛版本集成与功能验收。
+项目链接：
+- https://github.com/BeautifulGirlF4/BGF4-b

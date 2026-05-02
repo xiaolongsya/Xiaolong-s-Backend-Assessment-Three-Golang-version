@@ -5,6 +5,9 @@
         },
         {
             "path": "../../backend3-go-fronted"
+        },
+        {
+            "path": "../../BGF4-b"
         }
     ]
 }

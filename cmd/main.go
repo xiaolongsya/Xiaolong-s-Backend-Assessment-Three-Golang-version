@@ -6,9 +6,11 @@ import (
 	"openai-backend/internal/model"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	_ = godotenv.Load()
 	model.InitDB()
 	r := gin.Default()
 	r.MaxMultipartMemory = 8 << 20

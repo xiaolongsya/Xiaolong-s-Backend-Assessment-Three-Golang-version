@@ -1,0 +1,16 @@
+一句话简介（可选，放 Boss 个人简介）
+1. Agent 全栈实习方向：用 Go 做过可被官方 SDK 直接调用的 OpenAI 风格后端（SSE 流式/非流式 + 鉴权 + 落库 + 生命周期管理），并熟练用 Cursor / Copilot / antigravity 做 Agent 辅助开发提效。
+
+个人优势（序号版）
+1. Agent 辅助开发效率高：熟练使用 Cursor、GitHub Copilot Chat、antigravity 等 AI Agent 工具做需求拆解、代码脚手架/重构、接口文档与测试生成；关键逻辑坚持人工审阅与回归验证，效率与质量兼顾。
+2. Go 后端实战强：用 Go（Gin + GORM + MySQL）实现 OpenAI 风格后端，覆盖 Bearer Token 鉴权、Chat Completions（SSE 流式/非流式）、结果查询/删除/取消、请求响应落库等完整链路，可独立交付可运行服务。
+3. AI 应用工程能力：实现“统一接口层”对接不同模型服务，支持请求转发/中转与流式输出，降低业务侧接入成本与维护复杂度。
+4. 全栈闭环能力：具备 Vue3/Vite、小程序与企业交付项目经验，能完成前后端联调、鉴权接入、流式渲染与异常排查，保证功能从开发到上线可用。
+5. 工程化与协作意识：重视分层与可维护性、接口语义一致性、OpenAPI/Apifox 文档化与可验证的回归脚本；有团队竞赛后端负责人经历，沟通与推进效率高。
+
+专业技能（序号版）
+1. Agent 工具链：Cursor、GitHub Copilot Chat、antigravity；擅长把任务拆成可执行步骤并用工具加速实现与验证。
+2. Go 后端：Gin、GORM、MySQL、RESTful API、Bearer/JWT 鉴权、中间件、SSE（text/event-stream）流式输出、接口生命周期管理（GET/DELETE/CANCEL）。
+3. AI 应用：OpenAI 兼容接口、对话流式/非流式、请求转发/中转、日志与结果管理、Embedding 向量检索、语义搜索/推荐。
+4. 前端/全栈：Vue3、Vite、Axios、响应式布局、小程序开发、前后端联调。
+5. 工程化：OpenAPI/Apifox、Git/GitHub、环境变量配置与部署联调、SDK 回归测试思路（官方 OpenAI Python SDK）。
