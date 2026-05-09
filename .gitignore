@@ -20,6 +20,7 @@ vendor/
 # Env & secrets
 .env
 .env.*
+!.env.example
 
 # System
 .DS_Store
