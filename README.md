@@ -223,6 +223,37 @@ python tests/sdk_test.py
 
 说明：SDK 脚本当前默认面向云端验收地址；如果在本地联调，建议显式设置 `OPENAI_BASE_URL=http://localhost:8091/v1` 再执行。
 
+## 单元测试
+
+本项目已补充 Go 单元测试，覆盖：
+
+- Bearer Token 鉴权中间件
+- 模型白名单校验
+- `UPSTREAM_FALLBACKS` 解析与回退状态判断
+- 非流式上游回退重试
+- SSE 流式上游回退
+
+执行方式：
+
+```powershell
+go test ./...
+```
+
+如果只想跑服务层的回退测试：
+
+```powershell
+go test ./internal/service
+```
+
+如果只想跑 handler / middleware 的测试：
+
+```powershell
+go test ./internal/handler
+go test ./internal/middleware
+```
+
+当前测试结果：`go test ./...` 通过。
+
 ## API 中转（可选加分）
 
 用于解决不同模型提供商 API/SDK 不统一的问题：后端对外保持 OpenAI 风格接口，对内按 provider 配置转发到真实上游（上游需提供 OpenAI 兼容的 `/chat/completions`）。
@@ -257,6 +288,16 @@ $env:UPSTREAM_FALLBACKS='minimax=volcano;volcano=minimax'
 
 - `GET /v1/admin/models`：列出所有模型（包含 `enabled=0/1`）
 - `PATCH /v1/admin/models/{model_id}`：更新某个模型是否启用（请求体：`{"enabled": true|false}`）
+
+## AIGC 使用说明
+
+本项目开发过程中使用了 AIGC 工具辅助编写和整理内容，主要用于：
+
+- 生成和润色 README 文档结构
+- 辅助设计单元测试用例
+- 辅助梳理上游回退逻辑与验证步骤
+
+实际代码实现、接口行为和测试结果均已在本仓库中完成并通过验证。
 
 ## Files API（可选加分）
 
